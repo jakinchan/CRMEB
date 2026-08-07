@@ -11,12 +11,21 @@
 import axios from 'axios';
 import { Message } from 'element-ui';
 import { getCookies, removeCookies } from '@/libs/util';
+import { Local } from '@/utils/storage.js';
 import Setting from '@/setting';
 import router from '@/router';
 const service = axios.create({
   baseURL: Setting.apiBaseURL,
   timeout: 100000, // 请求超时时间
 });
+
+// 后台界面语言 -> 服务端语言识别码（对应 eb_lang_country.code）
+const LOCALE_TO_LANG = {
+  'zh-cn': 'zh-CN',
+  en: 'en-US',
+  ja: 'ja-JP',
+  'zh-tw': 'zh-Hant',
+};
 
 axios.defaults.withCredentials = true; // 携带cookie
 
@@ -36,6 +45,12 @@ service.interceptors.request.use(
     const kefuToken = getCookies('kefu_token');
     if (token || kefuToken) {
       config.headers['Authori-zation'] = config.kefu ? 'Bearer ' + kefuToken : 'Bearer ' + token;
+    }
+    // 让服务端返回的提示语跟随后台界面语言
+    const themeConfig = Local.get('themeConfigPrev');
+    const lang = themeConfig && LOCALE_TO_LANG[themeConfig.globalI18n];
+    if (lang) {
+      config.headers['Cb-lang'] = lang;
     }
     return config;
   },
