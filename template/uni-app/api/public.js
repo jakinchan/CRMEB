@@ -339,3 +339,17 @@ export function remoteRegister(data) {
     noAuth: true,
   });
 }
+
+/**
+ * 国際電話の国番号一覧を取得（海外会員登録用）
+ *
+ */
+export function getDialCodeList() {
+  return request.get(
+    `get_dial_code_list`,
+    {},
+    {
+      noAuth: true,
+    },
+  );
+}

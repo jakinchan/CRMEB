@@ -97,6 +97,19 @@ class Tencent extends BaseSms
     }
 
     /**
+     * 署名を差し替える（国際SMSは国内とは別の署名を使うため）
+     * @param string $signName
+     * @return $this
+     */
+    public function setSignName(string $signName)
+    {
+        if ($signName !== '') {
+            $this->signName = $signName;
+        }
+        return $this;
+    }
+
+    /**
      * @param string $phone
      * @param string $templateId
      * @param array $data

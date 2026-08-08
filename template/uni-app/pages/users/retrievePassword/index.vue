@@ -11,6 +11,7 @@
 				<div class="item">
 					<div class="acea-row row-middle">
 						<image src="../static/phone_1.png"></image>
+						<dial-code-picker v-model="dialCode" />
 						<input type="text" :placeholder="$t(`输入手机号码`)" v-model="account" />
 					</div>
 				</div>
@@ -48,6 +49,8 @@
 
 <script>
 	import sendVerifyCode from "@/mixins/SendVerifyCode";
+	import DialCodePicker from "@/components/dialCodePicker/index.vue";
+	import { checkPhone, formatPhone } from "@/utils/validate";
 	import {
 		registerVerify,
 		registerReset,
@@ -59,9 +62,14 @@
 
 	export default {
 		name: "RetrievePassword",
+		components: {
+			DialCodePicker
+		},
 		data: function() {
 			return {
 				account: "",
+				// 海外会員向け: 選択中の国番号
+				dialCode: "",
 				password: "",
 				captcha: "",
 				keyCode: "",
@@ -98,14 +106,15 @@
 				if (!that.account) return that.$util.Tips({
 					title: that.$t(`请填写手机号码`)
 				});
-				if (!/^1(3|4|5|7|8|9|6)\d{9}$/i.test(that.account)) return that.$util.Tips({
+				if (!checkPhone(that.account, that.dialCode)) return that.$util.Tips({
 					title: that.$t(`请输入正确的手机号码`)
 				});
 				if (!that.captcha) return that.$util.Tips({
 					title: that.$t(`请填写验证码`)
 				});
 				registerReset({
-						account: that.account,
+						account: formatPhone(that.account, that.dialCode),
+						dial_code: that.dialCode,
 						captcha: that.captcha,
 						password: that.password,
 						code: that.codeVal
@@ -128,12 +137,13 @@
 				if (!that.account) return that.$util.Tips({
 					title: that.$t(`请填写手机号码`)
 				});
-				if (!/^1(3|4|5|7|8|9|6)\d{9}$/i.test(that.account)) return that.$util.Tips({
+				if (!checkPhone(that.account, that.dialCode)) return that.$util.Tips({
 					title: that.$t(`请输入正确的手机号码`)
 				});
 				if (that.formItem == 2) that.type = "register";
 				await registerVerify({
-						phone: that.account,
+						phone: formatPhone(that.account, that.dialCode),
+						dial_code: that.dialCode,
 						type: that.type,
 						key: that.keyCode,
 						code: that.codeVal

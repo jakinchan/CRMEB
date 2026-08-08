@@ -16,18 +16,26 @@ use think\Validate;
 
 class StoreServiceFeedbackValidate extends Validate
 {
-    protected $regex = ['phone' => '/^1[3456789]\d{9}$/'];
-
     protected $rule = [
-        'phone' => 'require|regex:phone',
+        'phone' => 'require|checkPhone',
         'rela_name' => 'require',
         'content' => 'require',
     ];
 
     protected $message = [
         'phone.require' => '手机号必须填写',
-        'phone.regex' => '手机号格式错误',
+        'phone.checkPhone' => '手机号格式错误',
         'content.require' => '请填写反馈内容',
         'rela_name.require' => '名称必须填写',
     ];
+
+    /**
+     * 手机号検証（海外番号対応）
+     * @param string $value
+     * @return bool
+     */
+    protected function checkPhone($value): bool
+    {
+        return check_phone($value);
+    }
 }

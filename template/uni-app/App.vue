@@ -12,6 +12,7 @@ import Routine from "./libs/routine.js";
 import { silenceBindingSpread } from "@/utils";
 import { getCrmebCopyRight, getThemeInfo } from "@/api/api.js";
 import { getLangJson, getLangVersion } from "@/api/user.js";
+import { resolveLocale } from "@/utils/locale.js";
 import { mapGetters } from "vuex";
 import colors from "@/mixins/color.js";
 import Cache from "@/utils/cache";
@@ -133,11 +134,21 @@ export default {
     applyTheme(previewThemeId);
     getLangVersion().then((res) => {
       let version = res.data.version;
-      if (version != uni.getStorageSync("LANG_VERSION")) {
+      // 言語パックが未取得、または言語が切り替わった場合も取り直す。
+      // 初回は request.js が端末の言語を Cb-lang で送るため、
+      // ブラウザ言語に対応する言語パックが返ってくる。
+      const current = resolveLocale();
+      const cached = uni.getStorageSync("localeJson");
+      const needFetch =
+        version != uni.getStorageSync("LANG_VERSION") ||
+        !cached ||
+        !cached[current];
+      if (needFetch) {
         getLangJson().then((res) => {
           let value = Object.keys(res.data)[0];
-          Cache.set("locale", Object.keys(res.data)[0]);
+          Cache.set("locale", value);
           this.$i18n.setLocaleMessage(value, res.data[value]);
+          this.$i18n.locale = value;
           uni.setStorageSync("localeJson", res.data);
         });
       }

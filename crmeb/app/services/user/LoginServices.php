@@ -15,6 +15,7 @@ namespace app\services\user;
 use app\dao\user\UserDao;
 use app\services\BaseServices;
 use app\services\yihaotong\SmsRecordServices;
+use app\services\message\notice\MailService;
 use app\services\message\notice\SmsService;
 use app\services\wechat\WechatUserServices;
 use crmeb\exceptions\ApiException;
@@ -52,7 +53,8 @@ class LoginServices extends BaseServices
      */
     public function login($account, $password, $spread, $agent_id)
     {
-        $user = $this->dao->getOne(['account|phone' => $account, 'is_del' => 0]);
+        // メール登録の会員もログインできるよう email も照合対象にする
+        $user = $this->dao->getOne(['account|phone|email' => $account, 'is_del' => 0]);
         if ($user) {
             if ($user->pwd !== md5((string)$password))
                 throw new ApiException('账号或密码错误');
@@ -212,6 +214,62 @@ class LoginServices extends BaseServices
     }
 
     /**
+     * メールへ認証コードを送信する
+     *
+     * @param MailService $services
+     * @param string $email
+     * @param string $type register / login / reset
+     * @param int $time 有効時間（分）
+     * @return int 送信した認証コード
+     */
+    public function verifyEmail(MailService $services, string $email, string $type, int $time)
+    {
+        $exists = (bool)$this->dao->getOne(['account|email' => $email, 'is_del' => 0]);
+        if ($type === 'register' && $exists) {
+            throw new ApiException('邮箱已注册');
+        }
+        if ($type === 'reset' && !$exists) {
+            throw new ApiException('用户不存在');
+        }
+        $code = rand(100000, 999999);
+        $services->sendVerifyCode($email, (string)$code, $time);
+        return $code;
+    }
+
+    /**
+     * メールアドレスでのログイン（未登録なら自動で会員登録する）
+     *
+     * 電話番号での mobile() と同じ導線をメールでも提供する。
+     *
+     * @param string $email
+     * @param $spread
+     * @param string $user_type
+     * @param int $agent_id
+     * @return array
+     */
+    public function emailLogin(string $email, $spread, string $user_type = 'h5', $agent_id = 0)
+    {
+        $user = $this->dao->getOne(['account|email' => $email, 'is_del' => 0]);
+        if (!$user) {
+            // 初回はパスワード未設定のまま登録し、あとで本人に変更させる
+            $user = $this->register($email, '123456', $spread, $user_type, 'email');
+        }
+        if (!$user['status']) {
+            throw new ApiException('您已被禁止登录，请联系管理员');
+        }
+        if ($agent_id) {
+            $this->updateUserInfo(['code' => $agent_id, 'is_staff' => 1], $user);
+        } else {
+            $this->updateUserInfo(['code' => $spread], $user);
+        }
+        $token = $this->createToken((int)$user['uid'], 'api');
+        if (!$token) {
+            throw new ApiException('登录失败');
+        }
+        return ['token' => $token['token'], 'expires_time' => $token['params']['exp']];
+    }
+
+    /**
      * H5用户注册
      * @param $account
      * @param $password
@@ -222,17 +280,19 @@ class LoginServices extends BaseServices
      * @throws \think\db\exception\DbException
      * @throws \think\db\exception\ModelNotFoundException
      */
-    public function register($account, $password, $spread, $user_type = 'h5')
+    public function register($account, $password, $spread, $user_type = 'h5', string $accountType = 'phone')
     {
-        if ($this->dao->getOne(['account|phone' => $account, 'is_del' => 0])) {
-            throw new ApiException('手机号已注册');
+        $isEmail = $accountType === 'email';
+        if ($this->dao->getOne(['account|phone|email' => $account, 'is_del' => 0])) {
+            throw new ApiException($isEmail ? '邮箱已注册' : '手机号已注册');
         }
         /** @var UserServices $userServices */
         $userServices = app()->make(UserServices::class);
-        $phone = $account;
         $data['account'] = $account;
         $data['pwd'] = md5((string)$password);
-        $data['phone'] = $phone;
+        // メール登録では phone を空にし、email をログインIDとして持たせる
+        $data['phone'] = $isEmail ? '' : $account;
+        $data['email'] = $isEmail ? $account : '';
         if ($spread) {
             $data['spread_uid'] = $spread;
             $data['spread_time'] = time();
@@ -251,7 +311,10 @@ class LoginServices extends BaseServices
         $data['add_ip'] = app('request')->ip();
         $data['last_time'] = time();
         $data['last_ip'] = app('request')->ip();
-        $data['nickname'] = substr_replace($account, '****', 3, 4);
+        // 電話番号は中間4桁を隠す。メールはローカル部だけを使い、@以降は伏せる
+        $data['nickname'] = $isEmail
+            ? self::maskEmailForNickname($account)
+            : substr_replace($account, '****', 3, 4);
         $data['avatar'] = sys_config('h5_avatar');
         $data['city'] = '';
         $data['language'] = '';
@@ -300,9 +363,28 @@ class LoginServices extends BaseServices
      * @throws \think\db\exception\DbException
      * @throws \think\db\exception\ModelNotFoundException
      */
+    /**
+     * メール登録時の初期ニックネーム
+     *
+     * ローカル部の先頭3文字だけ残し、以降とドメインは伏せる。
+     * ニックネームは他の利用者にも見えるため、アドレス全体を露出させない。
+     *
+     * @param string $email
+     * @return string
+     */
+    public static function maskEmailForNickname(string $email): string
+    {
+        $local = strstr($email, '@', true);
+        if ($local === false || $local === '') {
+            $local = $email;
+        }
+        $head = mb_substr($local, 0, 3);
+        return $head . '****';
+    }
+
     public function reset($account, $password)
     {
-        $user = $this->dao->getOne(['account|phone' => $account, 'is_del' => 0], 'uid');
+        $user = $this->dao->getOne(['account|phone|email' => $account, 'is_del' => 0], 'uid');
         if (!$user) {
             throw new ApiException('用户不存在');
         }

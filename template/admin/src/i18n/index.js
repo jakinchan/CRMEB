@@ -11,6 +11,8 @@ import enLocale from 'element-ui/lib/locale/lang/en';
 import zhtwLocale from 'element-ui/lib/locale/lang/zh-TW';
 import jaLocale from 'element-ui/lib/locale/lang/ja';
 import store from '@/store/index.js';
+import { Local } from '@/utils/storage.js';
+import { resolveLocale, FALLBACK_LOCALE } from '@/utils/locale.js';
 
 import nextZhcn from '@/i18n/lang/zh-cn.js';
 import nextEn from '@/i18n/lang/en.js';
@@ -69,10 +71,17 @@ const messages = {
   },
 };
 
+// 初回表示はブラウザの言語を使い、利用者が明示的に選んだ場合はそれを優先する。
+// store の既定値（zh-cn）をそのまま使うと、日本語環境でも中国語で表示されてしまう。
+const storedThemeConfig = Local.get('themeConfigPrev');
+const initialLocale = resolveLocale(storedThemeConfig);
+// 以降の画面が store を参照するため、判定結果を反映しておく
+store.state.themeConfig.themeConfig.globalI18n = initialLocale;
+
 // 导出语言国际化
 export const i18n = new VueI18n({
-  locale: store.state.themeConfig.themeConfig.globalI18n,
-  fallbackLocale: 'zh-cn',
+  locale: initialLocale,
+  fallbackLocale: FALLBACK_LOCALE,
   messages,
   silentTranslationWarn: true, // 去除国际化警告
 });

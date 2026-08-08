@@ -20,24 +20,36 @@ use think\Validate;
  */
 class RegisterValidates extends Validate
 {
-    protected $regex = ['phone' => '/^1[3456789]\d{9}$/'];
-
     protected $rule = [
-        'phone' => 'require|regex:phone',
-        'account' => 'require|regex:phone',
+        'phone' => 'require|checkPhone',
+        'account' => 'require|checkPhone',
         'captcha' => 'require|length:6',
         'password' => 'require',
     ];
 
     protected $message = [
         'phone.require' => '请输入手机号',
-        'phone.regex' => '手机号格式不正确',
+        'phone.checkPhone' => '手机号格式不正确',
         'account.require' => '请输入手机号',
-        'account.regex' => '手机号格式不正确',
+        'account.checkPhone' => '手机号格式不正确',
         'captcha.require' => '请输入验证码',
         'captcha.length' => '验证码错误',
         'password.require' => '密码必须是在6到16位之间',
     ];
+
+    /**
+     * 手机号検証（海外番号対応）
+     *
+     * 検証時点の値は既に保存形式へ正規化されている想定。
+     * 中国番号は国内表記、それ以外は E.164 形式を受け付ける。
+     *
+     * @param string $value
+     * @return bool
+     */
+    protected function checkPhone($value): bool
+    {
+        return check_phone($value);
+    }
 
 
     public function sceneCode()

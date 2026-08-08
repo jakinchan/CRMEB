@@ -1,5 +1,9 @@
 <template>
 	<view class="login-wrapper" :style="colorStyle">
+		<!-- 未ログインでも言語を切り替えられるようにする -->
+		<view class="lang-bar">
+			<lang-switch @change="onLangChange" />
+		</view>
 		<view class="shading">
 			<image :src="logoUrl" />
 			<view v-if="configData && configData.site_name" class="name">
@@ -12,7 +16,8 @@
 					<view class="item">
 						<view class="acea-row row-middle">
 							<image src="../static/phone_1.png" style="width: 24rpx; height: 34rpx"></image>
-							<input type="text" :placeholder="$t(`输入手机号码`)" v-model="account" maxlength="11" required />
+							<dial-code-picker v-model="dialCode" />
+							<input type="text" :placeholder="$t(`输入手机号码`)" v-model="account" :maxlength="phoneMaxLength" required />
 						</view>
 					</view>
 					<view class="item">
@@ -27,10 +32,26 @@
 				</navigator> -->
 			</view>
 			<view class="list" v-if="current !== 0 || appLoginStatus || appleLoginStatus">
-				<view class="item">
+				<!-- 電話番号とメールアドレスを切り替える。SMSが届かない国でも登録できるようにするため -->
+				<view class="account-type" v-if="emailEnabled && !appLoginStatus && !appleLoginStatus">
+					<view :class="accountType === 'phone' ? 'on' : ''" @click="switchAccountType('phone')">
+						{{ $t(`手机号注册`) }}
+					</view>
+					<view :class="accountType === 'email' ? 'on' : ''" @click="switchAccountType('email')">
+						{{ $t(`邮箱注册`) }}
+					</view>
+				</view>
+				<view class="item" v-if="accountType === 'phone'">
 					<view class="acea-row row-middle">
 						<image src="../static/phone_1.png" style="width: 24rpx; height: 34rpx"></image>
-						<input type="text" :placeholder="$t(`输入手机号码`)" v-model="account" :maxlength="11" />
+						<dial-code-picker v-model="dialCode" />
+						<input type="text" :placeholder="$t(`输入手机号码`)" v-model="account" :maxlength="phoneMaxLength" />
+					</view>
+				</view>
+				<view class="item" v-else>
+					<view class="acea-row row-middle">
+						<image src="../static/code_1.png" style="width: 28rpx; height: 32rpx"></image>
+						<input type="text" :placeholder="$t(`请输入邮箱`)" v-model="email" :maxlength="100" />
 					</view>
 				</view>
 				<view class="item">
@@ -50,7 +71,7 @@
 					</view>
 				</view> -->
 			</view>
-			<view class="logon" @click="loginMobile" v-if="current !== 0">{{ $t(`登录`) }}</view>
+			<view class="logon" @click="onCodeLogin" v-if="current !== 0">{{ $t(`登录`) }}</view>
 			<view class="logon" @click="submit" v-if="current === 0">{{ $t(`登录`) }}</view>
 			<!-- #ifndef APP-PLUS -->
 			<view class="tips">
@@ -103,7 +124,7 @@
 <script>
 import dayjs from '@/plugin/dayjs/dayjs.min.js';
 import sendVerifyCode from '@/mixins/SendVerifyCode';
-import { loginH5, loginMobile, registerVerify, register, getCodeApi, getUserInfo, appleLogin } from '@/api/user';
+import { loginH5, loginMobile, registerVerify, register, getCodeApi, getUserInfo, appleLogin, emailVerify, emailLogin } from '@/api/user';
 import attrs, { required, alpha_num, chs_phone } from '@/utils/validate';
 import { getLogo } from '@/api/public';
 // import cookie from "@/utils/store/cookie";
@@ -114,12 +135,17 @@ import { wechatAppAuth } from '@/api/api.js';
 const BACK_URL = 'login_back_url';
 import colors from '@/mixins/color.js';
 import Verify from '../components/verify/index.vue';
+import DialCodePicker from '@/components/dialCodePicker/index.vue';
+import LangSwitch from '@/components/langSwitch/index.vue';
 import Cache from '@/utils/cache';
+import { checkPhone, formatPhone } from '@/utils/validate';
 
 export default {
 	name: 'Login',
 	components: {
-		Verify
+		Verify,
+		DialCodePicker,
+		LangSwitch
 	},
 	mixins: [sendVerifyCode, colors],
 	data: function () {
@@ -146,8 +172,21 @@ export default {
 			appleShow: false, // 苹果登录版本必须要求ios13以上的
 			keyLock: true,
 			captchaType: 'clickWord',
-			configData: Cache.get('BASIC_CONFIG')
+			configData: Cache.get('BASIC_CONFIG'),
+			// 海外会員向け: 選択中の国番号（+ は含まない）。既定はサーバー設定に従う
+			dialCode: '',
+			// 'phone' | 'email' … SMSが届かない国でも登録できるよう切り替える
+			accountType: 'phone',
+			email: '',
+			// メール登録が使えるかはサーバー設定に依存する
+			emailEnabled: false
 		};
+	},
+	computed: {
+		// 中国番号は従来どおり11桁固定、海外番号は桁数が国ごとに異なるため緩める
+		phoneMaxLength() {
+			return String(this.dialCode || '86') === '86' ? 11 : 15;
+		}
 	},
 	watch: {
 		formItem: function (nval, oVal) {
@@ -174,10 +213,80 @@ export default {
 	mounted() {
 		// this.getCode();
 		this.getLogoImage();
+		// メール登録が使えるかはサーバー設定（config/mail.php）に依存する
+		const basic = Cache.get('BASIC_CONFIG') || {};
+		this.emailEnabled = !!Number(basic.email_auth_switch || 0);
 	},
 	methods: {
 		ChangeIsDefault(e) {
 			this.$set(this, 'protocol', !this.protocol);
+		},
+		// 言語切替後は国番号セレクタの表示名も更新する
+		onLangChange() {
+			this.$forceUpdate();
+		},
+		// 電話番号 / メールアドレスの切り替え
+		switchAccountType(type) {
+			if (this.accountType === type) return;
+			this.accountType = type;
+			this.captcha = '';
+		},
+		// 認証コードログインの入口。選択中の方式へ振り分ける
+		onCodeLogin() {
+			if (this.accountType === 'email') return this.loginByEmail();
+			return this.loginMobile();
+		},
+		// メールアドレスでログイン（未登録なら自動で会員登録される）
+		loginByEmail() {
+			const that = this;
+			if (!that.protocol) {
+				that.inAnimation = true;
+				return that.$util.Tips({ title: that.$t(`已阅读并同意`) });
+			}
+			if (!that.email) return that.$util.Tips({ title: that.$t(`请输入邮箱`) });
+			if (!that.isValidEmail(that.email)) return that.$util.Tips({ title: that.$t(`邮箱格式不正确`) });
+			if (!that.captcha) return that.$util.Tips({ title: that.$t(`请填写验证码`) });
+			emailLogin({
+				email: that.email,
+				captcha: that.captcha,
+				spread: that.$Cache.get('spread'),
+				agent_id: that.$Cache.get('agent_id') || 0
+			})
+				.then((res) => {
+					const data = res.data;
+					that.$store.commit('LOGIN', {
+						token: data.token,
+						time: data.expires_time - that.$Cache.time()
+					});
+					that.getUserInfo();
+				})
+				.catch((res) => {
+					that.$util.Tips({ title: res });
+				});
+		},
+		// メール認証コードの送信
+		sendEmailCode() {
+			const that = this;
+			if (!that.email) return that.$util.Tips({ title: that.$t(`请输入邮箱`) });
+			if (!that.isValidEmail(that.email)) return that.$util.Tips({ title: that.$t(`邮箱格式不正确`) });
+			emailVerify({
+				email: that.email,
+				type: 'register',
+				key: that.keyCode,
+				captchaType: that.captchaType,
+				captchaVerification: that.captchaVerification || ''
+			})
+				.then((res) => {
+					that.sendCode();
+					that.$util.Tips({ title: res.msg });
+				})
+				.catch((res) => {
+					that.$util.Tips({ title: res });
+				});
+		},
+		// メールアドレスの簡易検証。厳密な検証はサーバー側で行う
+		isValidEmail(email) {
+			return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(email || '').trim());
 		},
 		privacy(type) {
 			uni.navigateTo({
@@ -398,11 +507,17 @@ export default {
 					title: '请先阅读并同意协议'
 				});
 			}
+			// メール登録を選んでいる場合はメールアドレスを検証する
+			if (that.accountType === 'email') {
+				if (!that.email) return that.$util.Tips({ title: that.$t(`请输入邮箱`) });
+				if (!that.isValidEmail(that.email)) return that.$util.Tips({ title: that.$t(`邮箱格式不正确`) });
+				return that.$refs.verify.show();
+			}
 			if (!that.account)
 				return that.$util.Tips({
 					title: that.$t(`请填写手机号码`)
 				});
-			if (!/^1(3|4|5|7|8|9|6)\d{9}$/i.test(that.account))
+			if (!checkPhone(that.account, that.dialCode))
 				return that.$util.Tips({
 					title: that.$t(`请输入正确的手机号码`)
 				});
@@ -426,7 +541,7 @@ export default {
 				return that.$util.Tips({
 					title: that.$t(`请填写手机号码`)
 				});
-			if (!/^1(3|4|5|7|8|9|6)\d{9}$/i.test(that.account))
+			if (!checkPhone(that.account, that.dialCode))
 				return that.$util.Tips({
 					title: that.$t(`请输入正确的手机号码`)
 				});
@@ -451,7 +566,8 @@ export default {
 					});
 				}
 				loginMobile({
-					phone: that.account,
+					phone: formatPhone(that.account, that.dialCode),
+					dial_code: that.dialCode,
 					captcha: that.captcha,
 					spread: that.$Cache.get('spread'),
 					agent_id: that.$Cache.get('agent_id') || 0
@@ -495,7 +611,7 @@ export default {
 				return that.$util.Tips({
 					title: that.$t(`请填写手机号码`)
 				});
-			if (!/^1(3|4|5|7|8|9|6)\d{9}$/i.test(that.account))
+			if (!checkPhone(that.account, that.dialCode))
 				return that.$util.Tips({
 					title: that.$t(`请输入正确的手机号码`)
 				});
@@ -516,7 +632,8 @@ export default {
 					title: that.$t(`您输入的密码过于简单`)
 				});
 			register({
-				account: that.account,
+				account: formatPhone(that.account, that.dialCode),
+				dial_code: that.dialCode,
 				captcha: that.captcha,
 				password: that.password,
 				spread: that.$Cache.get('spread')
@@ -541,18 +658,24 @@ export default {
 					title: '请先阅读并同意协议'
 				});
 			}
+			// メール登録は専用エンドポイントへ振り分ける
+			if (that.accountType === 'email') {
+				that.captchaVerification = data.captchaVerification;
+				return that.sendEmailCode();
+			}
 			if (!that.account)
 				return that.$util.Tips({
 					title: that.$t(`请填写手机号码`)
 				});
-			if (!/^1(3|4|5|7|8|9|6)\d{9}$/i.test(that.account))
+			if (!checkPhone(that.account, that.dialCode))
 				return that.$util.Tips({
 					title: that.$t(`请输入正确的手机号码`)
 				});
 			if (that.formItem == 2) that.type = 'register';
 
 			await registerVerify({
-				phone: that.account,
+				phone: formatPhone(that.account, that.dialCode),
+				dial_code: that.dialCode,
 				type: that.type,
 				key: that.keyCode,
 				captchaType: this.captchaType,
@@ -601,7 +724,8 @@ export default {
 				});
 			}
 			loginH5({
-				account: that.account,
+				account: formatPhone(that.account, that.dialCode),
+				dial_code: that.dialCode,
 				password: that.password,
 				spread: that.$Cache.get('spread'),
 				agent_id: that.$Cache.get('agent_id') || 0
@@ -641,6 +765,32 @@ page {
 }
 </style>
 <style lang="scss">
+/* 言語切替ボタン（右上） */
+.lang-bar {
+	display: flex;
+	justify-content: flex-end;
+	padding: 20rpx 30rpx 0;
+	color: #fff;
+}
+/* 電話番号 / メールアドレスの切り替えタブ */
+.account-type {
+	display: flex;
+	margin-bottom: 20rpx;
+}
+.account-type view {
+	flex: 1;
+	text-align: center;
+	padding: 16rpx 0;
+	font-size: 28rpx;
+	color: #999;
+	border-bottom: 2rpx solid #f0f0f0;
+}
+.account-type view.on {
+	color: var(--view-theme, #e93323);
+	border-bottom-color: var(--view-theme, #e93323);
+	font-weight: 500;
+}
+
 .appLogin {
 	margin-top: 60rpx;
 

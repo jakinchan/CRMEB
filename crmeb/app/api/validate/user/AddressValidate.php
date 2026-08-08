@@ -19,12 +19,9 @@ use think\Validate;
  */
 class AddressValidate extends Validate
 {
-    //移动
-    protected $regex = ['phone' => '/^1[3456789]\d{9}|([0-9]{3,4}-)?[0-9]{7,8}$/'];
-
     protected $rule = [
         'real_name' => 'require|max:25',
-        'phone' => 'require|regex:phone',
+        'phone' => 'require|checkPhone',
         'province' => 'require',
         'city' => 'require',
         'district' => 'require',
@@ -35,10 +32,28 @@ class AddressValidate extends Validate
         'real_name.require' => '名称必须填写',
         'real_name.max' => '名称最多不能超过25个字符',
         'phone.require' => '手机号必须填写',
-        'phone.regex' => '手机号格式错误',
+        'phone.checkPhone' => '手机号格式错误',
         'province.require' => '省必须填写',
         'city.require' => '市必须填写',
         'district.require' => '区/县必须填写',
         'detail.require' => '详细地址必须填写',
     ];
+
+    /**
+     * 配送先の連絡先電話番号
+     *
+     * ログインIDではなく連絡用なので、国際携帯番号に加えて
+     * 従来どおり固定電話（市外局番付き）も許容する。
+     *
+     * @param string $value
+     * @return bool
+     */
+    protected function checkPhone($value): bool
+    {
+        if (check_phone($value)) {
+            return true;
+        }
+        // 固定電話・国際表記の連絡先（例: 03-1234-5678 / +81 3 1234 5678）
+        return (bool)preg_match('/^\+?[0-9]{1,4}?[-\s0-9]{6,18}$/', trim((string)$value));
+    }
 }

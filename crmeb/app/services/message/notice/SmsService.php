@@ -19,6 +19,7 @@ use app\services\message\SystemNotificationServices;
 use app\services\serve\ServeServices;
 use crmeb\exceptions\ApiException;
 use crmeb\services\CacheService;
+use think\facade\Config;
 use think\facade\Log;
 
 
@@ -77,6 +78,26 @@ class SmsService extends NoticeService
             }
             $smsMake = app()->make(ServeServices::class)->sms($type);
             $smsId = $mark == 'verify_code' ? app()->make(SystemNotificationServices::class)->value(['mark' => 'verify_code'], 'sms_id') : $this->noticeInfo['sms_id'];
+
+            // 海外番号（保存形式が「+」始まり）は国際SMSとして扱う。
+            // 国内用と国際用でテンプレート・署名が別管理のため、設定があれば差し替える。
+            if ($this->isInternational($phone)) {
+                $international = Config::get('sms.international', []);
+                if (!($international['enable'] ?? true)) {
+                    throw new ApiException('海外の電話番号への送信は現在無効です');
+                }
+                if ($type === 'yihaotong') {
+                    throw new ApiException('現在の短信ドライバは海外送信に対応していません');
+                }
+                if (!empty($international['template_id'])) {
+                    $smsId = $international['template_id'];
+                }
+                $signKey = $type . '_sign_name';
+                if (!empty($international[$signKey]) && method_exists($smsMake, 'setSignName')) {
+                    $smsMake->setSignName($international[$signKey]);
+                }
+            }
+
             //发送短信
             $res = $smsMake->send($phone, $smsId, $data);
             if ($res === false) {
@@ -86,6 +107,20 @@ class SmsService extends NoticeService
         } else {
             return false;
         }
+    }
+
+    /**
+     * 海外番号かどうか
+     *
+     * 保存形式では中国番号を国内表記（数字のみ）、それ以外を E.164（+始まり）で
+     * 保持しているため、先頭の「+」で判別できる。
+     *
+     * @param string $phone
+     * @return bool
+     */
+    protected function isInternational($phone): bool
+    {
+        return str_starts_with(trim((string)$phone), '+');
     }
 
     /**

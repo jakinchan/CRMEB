@@ -75,6 +75,7 @@ import screenfull from 'screenfull';
 import { AccountLogout } from '@/api/account';
 import { removeCookies } from '@/libs/util';
 import { Session, Local } from '@/utils/storage.js';
+import { SUPPORTED_LOCALES, LOCALE_TO_MOMENT, resolveLocale, shortLabel } from '@/utils/locale.js';
 import UserNews from '@/layout/navBars/breadcrumb/userNews.vue';
 import Search from '@/layout/navBars/breadcrumb/search.vue';
 export default {
@@ -87,19 +88,14 @@ export default {
       disabledI18n: 'zh-cn',
       disabledSize: '',
       isDot: false,
-      // 中文 / English / 日本語 三语切换
-      languageOptions: [
-        { value: 'zh-cn', label: '简体中文', short: '中' },
-        { value: 'en', label: 'English', short: 'EN' },
-        { value: 'ja', label: '日本語', short: '日' },
-      ],
+      // 中文 / 日本語 / English 三语切换（対応表は utils/locale.js に集約）
+      languageOptions: SUPPORTED_LOCALES,
     };
   },
   computed: {
     // 顶栏上显示的当前语言标识
     languageLabel() {
-      const current = this.languageOptions.find((item) => item.value === this.disabledI18n);
-      return current ? current.short : '中';
+      return shortLabel(this.disabledI18n);
     },
     // 获取用户信息
     getUserInfos() {
@@ -115,8 +111,9 @@ export default {
     },
   },
   mounted() {
+    // 初回（themeConfigPrev 未保存）でもブラウザ言語を反映させるため常に実行する
+    this.initI18n();
     if (Local.get('themeConfigPrev')) {
-      this.initI18n();
       this.initComponentSize();
     }
   },
@@ -186,15 +183,13 @@ export default {
       Local.set('themeConfigPrev', this.$store.state.themeConfig.themeConfig);
       this.$i18n.locale = lang;
       // 日期显示同步切换（与 main.js 的映射保持一致）
-      this.$moment.locale({ 'zh-cn': 'zh-cn', en: 'en', ja: 'ja', 'zh-tw': 'zh-tw' }[lang] || 'zh-cn');
+      this.$moment.locale(LOCALE_TO_MOMENT[lang] || 'zh-cn');
       this.initI18n();
     },
     // 初始化言语国际化
+    // 未選択ならブラウザの言語を採用する（resolveLocale が判定する）
     initI18n() {
-      const stored = Local.get('themeConfigPrev');
-      const locale = stored && stored.globalI18n;
-      // 未知语言时回落到简体中文，避免下拉框选中项为空
-      this.disabledI18n = this.languageOptions.some((item) => item.value === locale) ? locale : 'zh-cn';
+      this.disabledI18n = resolveLocale(Local.get('themeConfigPrev'));
     },
     // 初始化全局组件大小
     initComponentSize() {

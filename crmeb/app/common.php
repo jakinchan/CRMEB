@@ -405,13 +405,31 @@ if (!function_exists('check_link')) {
 }
 if (!function_exists('check_phone')) {
     /**
-     * 手机号验证
+     * 手机号验证（海外番号にも対応）
+     *
+     * 中国番号は国内表記（1 で始まる11桁）、それ以外は E.164 形式（+81…）を受け付ける。
+     * 対応国は config/phone.php で管理する。
+     *
      * @param $phone
-     * @return false|int
+     * @param string|int|null $dialCode 国番号。省略時は入力値から判定（既定は中国）
+     * @return bool
      */
-    function check_phone($phone)
+    function check_phone($phone, $dialCode = null)
     {
-        return preg_match("/^1[3456789]\d{9}$/", $phone);
+        return \crmeb\utils\PhoneNumber::normalize((string)$phone, $dialCode) !== null;
+    }
+}
+if (!function_exists('normalize_phone')) {
+    /**
+     * 入力された電話番号を保存形式へ正規化する
+     *
+     * @param string $phone
+     * @param string|int|null $dialCode 国番号（+ は不要）
+     * @return string|null 正規化できなければ null
+     */
+    function normalize_phone($phone, $dialCode = null)
+    {
+        return \crmeb\utils\PhoneNumber::normalize((string)$phone, $dialCode);
     }
 }
 if (!function_exists('anonymity')) {

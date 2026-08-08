@@ -12,8 +12,10 @@
 namespace app\api\controller\v1;
 
 use app\Request;
+use app\services\message\notice\MailService;
 use app\services\message\notice\SmsService;
 use app\services\wechat\WechatServices;
+use crmeb\services\mail\SmtpMailer;
 use think\facade\Config;
 use crmeb\services\CacheService;
 use app\services\user\LoginServices;
@@ -48,11 +50,17 @@ class LoginController
      */
     public function login(Request $request)
     {
-        [$account, $password, $spread, $agent_id] = $request->postMore([
-            'account', 'password', 'spread', ['agent_id', 0]
+        [$account, $password, $spread, $agent_id, $dialCode] = $request->postMore([
+            'account', 'password', 'spread', ['agent_id', 0], ['dial_code', '']
         ], true);
         if (!$account || !$password) {
             return app('json')->fail('请输入账号和密码');
+        }
+        // 海外会員は E.164 形式で保存されているため、入力値を保存形式へ寄せて照合する。
+        // 正規化できない場合はユーザー名など電話番号以外のアカウントとみなし、入力値をそのまま使う。
+        $normalized = normalize_phone((string)$account, $dialCode);
+        if ($normalized) {
+            $account = $normalized;
         }
         if (strlen(trim($password)) < 6 || strlen(trim($password)) > 32) {
             return app('json')->fail('账号密码必须是在6到32位之间');
@@ -131,13 +139,22 @@ class LoginController
      */
     public function verify(Request $request, SmsService $services)
     {
-        [$phone, $type, $key, $captchaType, $captchaVerification] = $request->postMore([
+        [$phone, $type, $key, $captchaType, $captchaVerification, $dialCode] = $request->postMore([
             ['phone', 0],
             ['type', ''],
             ['key', ''],
             ['captchaType', ''],
             ['captchaVerification', ''],
+            ['dial_code', ''],
         ], true);
+
+        // 海外番号に対応するため、以降の処理は保存形式に正規化した番号で行う
+        // （送信回数の集計キーと検証コードのキーを登録・ログイン時と一致させる）
+        $normalized = normalize_phone((string)$phone, $dialCode);
+        if (!$normalized) {
+            return app('json')->fail('手机号格式不正确');
+        }
+        $phone = $normalized;
 
         $keyName = 'sms.key.' . $key;
         if (!CacheService::has($keyName)) return app('json')->fail('发送验证码失败,请刷新页面重新获取');
@@ -200,6 +217,119 @@ class LoginController
     }
 
     /**
+     * メールへ認証コードを送信する
+     *
+     * SMS が届かない国や電話番号を持たない利用者でも会員登録できるようにするため、
+     * 電話番号版（verify）と同じ流れをメールで提供する。
+     *
+     * @param Request $request
+     * @param MailService $services
+     * @return mixed
+     */
+    public function emailVerify(Request $request, MailService $services)
+    {
+        [$email, $type, $key, $captchaType, $captchaVerification] = $request->postMore([
+            ['email', ''],
+            ['type', 'register'],
+            ['key', ''],
+            ['captchaType', ''],
+            ['captchaVerification', ''],
+        ], true);
+
+        if (!$services->isEnabled()) {
+            return app('json')->fail('邮箱注册未开启');
+        }
+
+        $email = trim((string)$email);
+        if (!SmtpMailer::isValidAddress($email)) {
+            return app('json')->fail('邮箱格式不正确');
+        }
+
+        $keyName = 'sms.key.' . $key;
+        if (!CacheService::has($keyName)) {
+            return app('json')->fail('发送验证码失败,请刷新页面重新获取');
+        }
+
+        // 送信回数の上限。SMS と同じ考え方で、迷惑メール化と課金事故を防ぐ
+        $config = Config::get('mail', []);
+        $limits = [
+            ['mail.minute.' . $email . date('YmdHi'), (int)($config['maxMinuteCount'] ?? 5), 61, '同一邮箱每分钟最多发送'],
+            ['mail.address.' . $email . '.' . date('Ymd'), (int)($config['maxAddressCount'] ?? 20), 86401, '同一邮箱每天最多发送'],
+            ['mail.ip.' . $request->ip() . '.' . date('Ymd'), (int)($config['maxIpCount'] ?? 50), 86401, '同一IP每天最多发送'],
+        ];
+        $counters = [];
+        foreach ($limits as [$cacheKey, $max, $ttl, $message]) {
+            $count = CacheService::has($cacheKey) ? (int)CacheService::get($cacheKey) : 0;
+            if ($count > $max) {
+                return app('json')->fail($message . $max . '条');
+            }
+            $counters[] = [$cacheKey, $count, $ttl];
+        }
+
+        //二次验证
+        try {
+            aj_captcha_check_two($captchaType, $captchaVerification);
+        } catch (\Throwable $e) {
+            return app('json')->fail($e->getMessage());
+        }
+
+        $time = (int)($config['code_expire_minutes'] ?: sys_config('verify_expire_time', 1));
+        try {
+            $code = $this->services->verifyEmail($services, $email, (string)$type, $time);
+        } catch (\Throwable $e) {
+            return app('json')->fail($e->getMessage());
+        }
+
+        // 認証コードのキーは電話番号版と同じ名前空間を使い、登録処理を共通化する
+        CacheService::set('code_' . $email, $code, $time * 60);
+        foreach ($counters as [$cacheKey, $count, $ttl]) {
+            CacheService::set($cacheKey, $count + 1, $ttl);
+        }
+        return app('json')->success('验证码发送成功');
+    }
+
+    /**
+     * メールアドレスでのログイン（未登録なら自動で会員登録）
+     *
+     * @param Request $request
+     * @return mixed
+     */
+    public function emailLogin(Request $request)
+    {
+        [$email, $captcha, $spread, $agent_id] = $request->postMore([
+            ['email', ''], ['captcha', ''], ['spread', 0], ['agent_id', 0]
+        ], true);
+
+        /** @var MailService $mailService */
+        $mailService = app()->make(MailService::class);
+        if (!$mailService->isEnabled()) {
+            return app('json')->fail('邮箱注册未开启');
+        }
+
+        $email = trim((string)$email);
+        if (!SmtpMailer::isValidAddress($email)) {
+            return app('json')->fail('邮箱格式不正确');
+        }
+
+        $verifyCode = CacheService::get('code_' . $email);
+        if (!$verifyCode) {
+            return app('json')->fail('请先获取验证码');
+        }
+        if (substr($verifyCode, 0, 6) != $captcha) {
+            return app('json')->fail('验证码错误');
+        }
+
+        $user_type = $request->getFromType() ?: 'h5';
+        try {
+            $token = $this->services->emailLogin($email, $spread, $user_type, $agent_id);
+        } catch (\Throwable $e) {
+            return app('json')->fail($e->getMessage());
+        }
+        CacheService::delete('code_' . $email);
+        return app('json')->success('登录成功', $token);
+    }
+
+    /**
      * H5注册新用户
      * @param Request $request
      * @return mixed
@@ -209,11 +339,32 @@ class LoginController
      */
     public function register(Request $request)
     {
-        [$account, $captcha, $password, $spread] = $request->postMore([['account', ''], ['captcha', ''], ['password', ''], ['spread', 0]], true);
-        try {
-            validate(RegisterValidates::class)->scene('register')->check(['account' => $account, 'captcha' => $captcha, 'password' => $password]);
-        } catch (ValidateException $e) {
-            return app('json')->fail($e->getError());
+        [$account, $captcha, $password, $spread, $dialCode] = $request->postMore([['account', ''], ['captcha', ''], ['password', ''], ['spread', 0], ['dial_code', '']], true);
+
+        // メールアドレスでの登録にも対応する。@ を含む場合はメールとして扱う。
+        $accountType = str_contains((string)$account, '@') ? 'email' : 'phone';
+        if ($accountType === 'email') {
+            /** @var MailService $mailService */
+            $mailService = app()->make(MailService::class);
+            if (!$mailService->isEnabled()) {
+                return app('json')->fail('邮箱注册未开启');
+            }
+            $account = trim((string)$account);
+            if (!SmtpMailer::isValidAddress($account)) {
+                return app('json')->fail('邮箱格式不正确');
+            }
+        } else {
+            // 検証コード送信時と同じ保存形式に揃える
+            $normalized = normalize_phone((string)$account, $dialCode);
+            if (!$normalized) {
+                return app('json')->fail('手机号格式不正确');
+            }
+            $account = $normalized;
+            try {
+                validate(RegisterValidates::class)->scene('register')->check(['account' => $account, 'captcha' => $captcha, 'password' => $password]);
+            } catch (ValidateException $e) {
+                return app('json')->fail($e->getError());
+            }
         }
         if (strlen(trim($password)) < 6 || strlen(trim($password)) > 32) {
             return app('json')->fail('账号密码必须是在6到32位之间');
@@ -226,7 +377,7 @@ class LoginController
             return app('json')->fail('验证码错误');
         if (md5($password) == md5('123456')) return app('json')->fail('密码太过简单，请输入较为复杂的密码');
 
-        $registerStatus = $this->services->register($account, $password, $spread, 'h5');
+        $registerStatus = $this->services->register($account, $password, $spread, 'h5', $accountType);
         if ($registerStatus) {
             return app('json')->success('注册成功');
         }
@@ -243,11 +394,26 @@ class LoginController
      */
     public function reset(Request $request)
     {
-        [$account, $captcha, $password] = $request->postMore([['account', ''], ['captcha', ''], ['password', '']], true);
-        try {
-            validate(RegisterValidates::class)->scene('register')->check(['account' => $account, 'captcha' => $captcha, 'password' => $password]);
-        } catch (ValidateException $e) {
-            return app('json')->fail($e->getError());
+        [$account, $captcha, $password, $dialCode] = $request->postMore([['account', ''], ['captcha', ''], ['password', ''], ['dial_code', '']], true);
+
+        // メールアドレスでのパスワード再設定にも対応する
+        if (str_contains((string)$account, '@')) {
+            $account = trim((string)$account);
+            if (!SmtpMailer::isValidAddress($account)) {
+                return app('json')->fail('邮箱格式不正确');
+            }
+        } else {
+            // 検証コード送信時と同じ保存形式に揃える
+            $normalized = normalize_phone((string)$account, $dialCode);
+            if (!$normalized) {
+                return app('json')->fail('手机号格式不正确');
+            }
+            $account = $normalized;
+            try {
+                validate(RegisterValidates::class)->scene('register')->check(['account' => $account, 'captcha' => $captcha, 'password' => $password]);
+            } catch (ValidateException $e) {
+                return app('json')->fail($e->getError());
+            }
         }
         if (strlen(trim($password)) < 6 || strlen(trim($password)) > 32) {
             return app('json')->fail('账号密码必须是在6到32位之间');
@@ -275,7 +441,14 @@ class LoginController
      */
     public function mobile(Request $request)
     {
-        [$phone, $captcha, $spread, $agent_id] = $request->postMore([['phone', ''], ['captcha', ''], ['spread', 0], ['agent_id', 0]], true);
+        [$phone, $captcha, $spread, $agent_id, $dialCode] = $request->postMore([['phone', ''], ['captcha', ''], ['spread', 0], ['agent_id', 0], ['dial_code', '']], true);
+
+        // 検証コード送信時と同じ保存形式に揃える
+        $normalized = normalize_phone((string)$phone, $dialCode);
+        if (!$normalized) {
+            return app('json')->fail('手机号格式不正确');
+        }
+        $phone = $normalized;
 
         //验证手机号
         try {

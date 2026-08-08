@@ -8,6 +8,7 @@
 // | Author: CRMEB Team <admin@crmeb.com>
 // +----------------------------------------------------------------------
 
+import { resolveLocale } from '@/utils/locale.js';
 import {
 	HTTP_REQUEST_URL,
 	HEADER,
@@ -43,9 +44,9 @@ function baseRequest(url, method, data, {
 	if (store.state.app.token) header[TOKENNAME] = 'Bearer ' + store.state.app.token;
 
 	return new Promise((reslove, reject) => {
-		if (uni.getStorageSync('locale')) {
-			header['Cb-lang'] = uni.getStorageSync('locale')
-		}
+		// 初回アクセスでもブラウザ／端末の言語で表示するため、保存が無ければ
+		// 判定結果を送る。これが無いとサーバー既定言語で返ってしまう。
+		header['Cb-lang'] = resolveLocale()
 		uni.request({
 			url: Url + '/api/' + url,
 			method: method || 'GET',

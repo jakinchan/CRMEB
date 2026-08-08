@@ -695,6 +695,34 @@ class PublicController
     }
 
     /**
+     * 获取国际电话国家代码列表（海外会员注册用）
+     *
+     * 注册・ログイン画面の国番号セレクタに表示する一覧を返す。
+     * 対応国は config/phone.php で管理する。
+     *
+     * @return mixed
+     */
+    public function getDialCodeList()
+    {
+        // 表示名は3言語まとめて返し、表示側の locale で選ばせる
+        // （多言語パックへの依存を作らず、この機能単体で完結させるため）
+        $data = [];
+        foreach (\crmeb\utils\PhoneNumber::countries() as $country) {
+            $data[] = [
+                'dial_code' => (string)$country['dial_code'],
+                'iso' => $country['iso'],
+                'name' => $country['name'],
+                'name_en' => $country['name_en'],
+                'name_ja' => $country['name_ja'] ?? $country['name'],
+            ];
+        }
+        return app('json')->success([
+            'list' => $data,
+            'default' => \crmeb\utils\PhoneNumber::defaultDialCode(),
+        ]);
+    }
+
+    /**
      * 获取版本号
      * @return mixed
      */
@@ -747,6 +775,8 @@ class PublicController
         $data['friend_pay_status'] = sys_config('friend_pay_status') == 1; //好友是否启用
         $data['wechat_auth_switch'] = (int)in_array(1, sys_config('routine_auth_type')); //微信登录开关
         $data['phone_auth_switch'] = (int)in_array(2, sys_config('routine_auth_type')); //手机号登录开关
+        //邮箱注册开关（海外会员向け。config/mail.php の設定が揃っているかで判定する）
+        $data['email_auth_switch'] = (int)app()->make(\app\services\message\notice\MailService::class)->isEnabled();
         $data['wechat_status'] = sys_config('wechat_appid') != '' && sys_config('wechat_appsecret') != ''; //公众号是否配置
         $data['site_func'] = sys_config('model_checkbox', ['seckill', 'bargain', 'combination']);
         return app('json')->success($data);

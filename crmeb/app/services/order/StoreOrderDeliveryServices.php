@@ -197,7 +197,7 @@ class StoreOrderDeliveryServices extends BaseServices
         if (!$data['delivery_uid']) {
             throw new AdminException('请输入送货人信息');
         }
-        if (!preg_match("/^1[3456789]{1}\d{9}$/", $data['delivery_id'])) {
+        if (!check_phone($data['delivery_id'])) {
             throw new AdminException('请输入正确的送货人电话号码');
         }
         $data['status'] = 1;
@@ -291,7 +291,7 @@ class StoreOrderDeliveryServices extends BaseServices
                 if (!$data['delivery_id']) {
                     throw new AdminException('请输入送货人电话号码');
                 }
-                if (!preg_match("/^1[3456789]{1}\d{9}$/", $data['delivery_id'])) {
+                if (!check_phone($data['delivery_id'])) {
                     throw new AdminException('请输入正确的送货人电话号码');
                 }
                 break;

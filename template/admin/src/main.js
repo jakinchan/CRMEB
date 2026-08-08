@@ -14,6 +14,7 @@ import App from './App';
 import router from './router';
 import store from './store';
 import { i18n } from '@/i18n/index.js';
+import { LOCALE_TO_MOMENT } from '@/utils/locale.js';
 
 // 配置和工具
 import config from '@/config';
@@ -92,8 +93,7 @@ Vue.component('common_wrapper', common_wrapper);
 
 // 配置第三方库
 // 日期显示跟随后台界面语言（moment 的语言标识与 i18n 的略有差异，需要映射）
-const MOMENT_LOCALE = { 'zh-cn': 'zh-cn', en: 'en', ja: 'ja', 'zh-tw': 'zh-tw' };
-moment.locale(MOMENT_LOCALE[i18n.locale] || 'zh-cn');
+moment.locale(LOCALE_TO_MOMENT[i18n.locale] || 'zh-cn');
 Vue.prototype.$moment = moment;
 
 VueClipboard.config.copyText = true;

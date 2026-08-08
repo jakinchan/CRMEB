@@ -414,7 +414,10 @@ class User extends AuthController
             return app('json')->fail('请填写姓名和电话');
         }
         if ($data['phone']) {
-            if (!preg_match("/^1[3456789]\d{9}$/", $data['phone'])) return app('json')->fail('手机号格式错误');
+            // 海外会員に対応するため、保存形式（中国は国内表記／他は E.164）へ正規化して検証する
+            $normalized = normalize_phone($data['phone'], $data['dial_code'] ?? null);
+            if (!$normalized) return app('json')->fail('手机号格式错误');
+            $data['phone'] = $normalized;
         }
         if ($this->services->count(['phone' => $data['phone'], 'is_del' => 0, 'not_uid' => $id])) {
             return app('json')->fail('手机号已经存在');

@@ -95,13 +95,11 @@
 						</view>
 					</view>
 					<!-- #endif -->
-					<view class="item acea-row row-between-wrapper" v-if="array.length">
+					<view class="item acea-row row-between-wrapper">
 						<view>{{$t(`语言切换`)}}</view>
-						<view class="uni-list-cell-db">
-							<picker @change="bindPickerChange" range-key="name" :value="setIndex" :range="array">
-								<view class="uni-input input">{{array[setIndex].name}}<text
-										class="iconfont icon-xiangyou"></text></view>
-							</picker>
+						<view class="uni-list-cell-db input">
+							<!-- ログイン画面と同じ実装を使い、切替処理を一本化する -->
+							<lang-switch :show-icon="false" />
 						</view>
 					</view>
 					<view class="item acea-row row-between-wrapper">
@@ -160,8 +158,6 @@
 		getUserInfo,
 		userEdit,
 		getLogout,
-		getLangList,
-		getLangJson,
 		mpBindingPhone
 	} from '@/api/user.js';
 	import {
@@ -181,8 +177,10 @@
 	import Cache from '@/utils/cache';
 	import colors from '@/mixins/color.js';
 	import appUpdate from "@/components/update/app-update.vue";
+	import LangSwitch from "@/components/langSwitch/index.vue";
 	export default {
 		components: {
+			LangSwitch,
 			// #ifdef APP-PLUS
 			appUpdate
 			// #endif
@@ -204,8 +202,6 @@
 				canvasStatus: false,
 				fileSizeString: '',
 				version: '',
-				array: [],
-				setIndex: 0,
 				mp_is_new: this.$Cache.get('MP_VERSION_ISNEW') || false
 			};
 		},
@@ -223,7 +219,6 @@
 		onLoad() {
 			if (this.isLogin) {
 				this.getUserInfo();
-				this.getLangList()
 				// #ifdef APP-PLUS
 				this.formatSize()
 				// 获取版本号
@@ -236,12 +231,6 @@
 			}
 		},
 		methods: {
-			getLangList() {
-				getLangList().then(res => {
-					this.array = res.data
-					this.setLang();
-				})
-			},
 			isNew() {
 				this.$util.Tips({
 					title: this.$t(`当前为最新版本`)
@@ -272,25 +261,6 @@
 							uni.hideLoading();
 						});
 				}
-			},
-			setLang() {
-				this.array.map((item, i) => {
-					if (this.$i18n.locale == item.value) {
-						this.setIndex = i
-					}
-				})
-			},
-			bindPickerChange(e, item) {
-				this.setIndex = e.detail.value
-				Cache.set('locale', this.array[this.setIndex].value)
-				getLangJson().then(res => {
-					uni.setStorageSync('localeJson', res.data);
-					this.$i18n.setLocaleMessage(this.array[this.setIndex].value, res.data[this.array[
-						this.setIndex].value]);
-					this.$nextTick(e => {
-						this.$i18n.locale = this.array[this.setIndex].value;
-					})
-				})
 			},
 
 			updateApp() {

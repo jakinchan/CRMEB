@@ -45,6 +45,19 @@ class Aliyun extends BaseSms
     }
 
     /**
+     * 署名を差し替える（国際SMSは国内とは別の署名を使うため）
+     * @param string $signName
+     * @return $this
+     */
+    public function setSignName(string $signName)
+    {
+        if ($signName !== '') {
+            $this->SignName = $signName;
+        }
+        return $this;
+    }
+
+    /**
      * 发送短信
      * @param string $phone
      * @param string $templateId

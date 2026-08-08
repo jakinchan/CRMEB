@@ -734,3 +734,22 @@ export function spreadAgent(data) {
 export function transferInfoApi(data) {
 	return request.get(`transfer/info`, data);
 }
+/**
+ * メール認証コードの送信（海外会員登録用）
+ * @param data object メールアドレス・種別
+ */
+export function emailVerify(data) {
+	return request.post("email/verify", data, {
+		noAuth: true
+	});
+}
+
+/**
+ * メールアドレスでのログイン／登録（海外会員登録用）
+ * @param data object メールアドレス・認証コード
+ */
+export function emailLogin(data) {
+	return request.post("login/email", data, {
+		noAuth: true
+	});
+}

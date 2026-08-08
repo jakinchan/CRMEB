@@ -47,6 +47,10 @@ Route::group(function () {
     Route::post('register', 'v1.LoginController/register')->name('register')->option(['real_name' => '手机号注册']);
     //手机号修改密码
     Route::post('register/reset', 'v1.LoginController/reset')->name('registerReset')->option(['real_name' => '手机号修改密码']);
+    //邮箱验证码发送（海外会员注册用）
+    Route::post('email/verify', 'v1.LoginController/emailVerify')->name('emailVerify')->option(['real_name' => '邮箱验证码发送']);
+    //邮箱登录/注册（海外会员注册用）
+    Route::post('login/email', 'v1.LoginController/emailLogin')->name('emailLogin')->option(['real_name' => '邮箱登录注册']);
     // 绑定手机号(静默授权 还未有用户信息)
     Route::post('binding', 'v1.LoginController/binding_phone')->name('bindingPhone')->option(['real_name' => '绑定手机号']);
     // 支付宝复制链接支付 弃用
@@ -526,6 +530,8 @@ Route::group(function () {
         Route::get('user_agreement', 'v1.PublicController/getUserAgreement')->name('getUserAgreement')->option(['real_name' => '获取用户协议']);
         //获取协议
         Route::get('get_agreement/:type', 'v1.PublicController/getAgreement')->name('getAgreement')->option(['real_name' => '获取协议']);
+        //获取国际电话国家代码列表（海外会员注册用）
+        Route::get('get_dial_code_list', 'v1.PublicController/getDialCodeList')->name('getDialCodeList')->option(['real_name' => '获取国际电话国家代码列表']);
 
     })->option(['mark' => 'other', 'mark_name' => '其他接口']);
 
