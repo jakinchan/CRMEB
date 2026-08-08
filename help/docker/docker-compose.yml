@@ -64,7 +64,7 @@ services:
     image: ccr.ccs.tencentyun.com/crmebky_php/nginx:v1.29.6
     restart: always
     ports:
-      - "8011:80"
+      - "8080:80"
     depends_on:
       - phpfpm
     environment:
