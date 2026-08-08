@@ -4,7 +4,7 @@ services:
     container_name: crmeb_mysql
     image: ccr.ccs.tencentyun.com/crmebky_php/mysql:v8.0.45
     ports:
-      - "33061:3306"
+      - "33062:3306"
     environment:
       TZ: Asia/Shanghai
       MYSQL_ROOT_PASSWORD: 123456
@@ -16,19 +16,19 @@ services:
       - ./mysql/log:/var/log/mysql
     networks:
       app_net:
-        ipv4_address: 192.168.10.11
+        ipv4_address: 172.32.10.11
   # redis 容器
   redis:
     container_name: crmeb_redis
     image: ccr.ccs.tencentyun.com/crmebky_php/redis:v8.6.1
     ports:
-      - "63791:6379"
+      - "63792:6379"
     environment:
       TZ: Asia/Shanghai
       REDIS_PASSWORD: 123456
     networks:
       app_net:
-        ipv4_address: 192.168.10.10
+        ipv4_address: 172.32.10.10
   # php 容器
   phpfpm:
     container_name: crmeb_php
@@ -57,7 +57,7 @@ services:
       - ../../crmeb/runtime:/var/www/runtime
     networks:
       app_net:
-        ipv4_address: 192.168.10.90
+        ipv4_address: 172.32.10.90
   # nginx 容器
   nginx:
     container_name: crmeb_nginx
@@ -77,11 +77,11 @@ services:
       - ./nginx/log:/etc/nginx/log
     networks:
       app_net:
-        ipv4_address: 192.168.10.80
+        ipv4_address: 172.32.10.80
 networks:
   app_net:
     driver: bridge
     ipam:
       driver: default
       config:
-        - subnet: 192.168.10.0/24
+        - subnet: 172.32.10.0/24

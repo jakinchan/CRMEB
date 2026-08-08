@@ -15,6 +15,8 @@ docker run -d --name crmeb \
   -p 3306:3306 \
   -p 6379:6379 \
   ccr.ccs.tencentyun.com/crmebky_php/crmebky:latest
+
+  docker run -d --name crmeb -p 8080:80 -p 3306:3306 -p 6379:6379 ccr.ccs.tencentyun.com/crmebky_php/crmebky:latest
 ```
 
 ### 访问服务
