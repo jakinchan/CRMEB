@@ -663,7 +663,11 @@ class UserServices extends BaseServices
         $f = array();
         $f[] = Form::input('uid', '用户编号', $user->getData('uid'))->disabled(true);
         $f[] = Form::input('real_name', '真实姓名', $user->getData('real_name'));
-        $f[] = Form::input('phone', '手机号码', $user->getData('phone'));
+        // 保存済みの番号から国番号を復元して初期選択にする（+81… は 81 を選んだ状態にする）
+        $split = \crmeb\utils\PhoneNumber::split((string)$user->getData('phone'));
+        $f[] = Form::select('dial_code', '国家/地区', $split['dial_code'] ?: \crmeb\utils\PhoneNumber::defaultDialCode())
+            ->setOptions(FormBuilder::setOptions($this->getDialCodeOptions()))->filterable(true);
+        $f[] = Form::input('phone', '手机号码', $split['national']);
 
         $f[] = Form::date('birthday', '生日', $user->getData('birthday') ? date('Y-m-d', $user->getData('birthday')) : '');
         $f[] = Form::input('card_id', '身份证号', $user->getData('card_id'));
@@ -713,6 +717,26 @@ class UserServices extends BaseServices
     }
 
     /**
+     * 国番号セレクタの選択肢
+     *
+     * 海外会員の電話番号を登録できるようにするため、config/phone.php の
+     * 対応国一覧をフォームの選択肢に変換する。
+     *
+     * @return array
+     */
+    protected function getDialCodeOptions(): array
+    {
+        $options = [];
+        foreach (\crmeb\utils\PhoneNumber::countries() as $country) {
+            $options[] = [
+                'value' => (string)$country['dial_code'],
+                'label' => '+' . $country['dial_code'] . ' ' . $country['name'],
+            ];
+        }
+        return $options;
+    }
+
+    /**
      * 添加用户表单
      * @param int $id
      * @return array
@@ -722,6 +746,9 @@ class UserServices extends BaseServices
     {
         $f = array();
         $f[] = Form::input('real_name', '真实姓名', '')->placeholder('请输入真实姓名');
+        // 海外会員を登録できるよう国番号を選ばせる。既定は config/phone.php の設定値
+        $f[] = Form::select('dial_code', '国家/地区', \crmeb\utils\PhoneNumber::defaultDialCode())
+            ->setOptions(FormBuilder::setOptions($this->getDialCodeOptions()))->filterable(true);
         $f[] = Form::input('phone', '手机号码', '')->placeholder('请输入手机号码')->required();
         $f[] = Form::date('birthday', '生日', '')->placeholder('请选择生日');
         $f[] = Form::input('card_id', '身份证号', '')->placeholder('请输入身份证号');

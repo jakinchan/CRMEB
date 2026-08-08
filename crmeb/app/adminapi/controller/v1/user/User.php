@@ -110,6 +110,7 @@ class User extends AuthController
         $data = $this->request->postMore([
             ['real_name', ''],
             ['phone', 0],
+            ['dial_code', ''],
             ['birthday', ''],
             ['card_id', ''],
             ['addres', ''],
@@ -129,9 +130,15 @@ class User extends AuthController
         if (!$data['phone']) {
             return app('json')->fail('请填写姓名和电话');
         }
-        if (!check_phone($data['phone'])) {
+        // 海外会員に対応するため、保存形式（中国は国内表記／他は E.164）へ正規化する。
+        // 管理画面のフォームに国番号欄が無いため、dial_code 未指定なら入力値から判定する
+        // （+81… のような国際表記、または国番号付きの数字列を受け付ける）。
+        $normalized = normalize_phone((string)$data['phone'], $data['dial_code'] ?: null);
+        if (!$normalized) {
             return app('json')->fail('手机号格式错误');
         }
+        $data['phone'] = $normalized;
+        unset($data['dial_code']);
         if ($this->services->count(['phone' => $data['phone'], 'is_del' => 0])) {
             return app('json')->fail('手机号已经存在');
         }
@@ -399,6 +406,7 @@ class User extends AuthController
             ['status', 0],
             ['level', 0],
             ['phone', 0],
+            ['dial_code', ''],
             ['addres', ''],
             ['label_id', []],
             ['group_id', 0],
@@ -415,10 +423,12 @@ class User extends AuthController
         }
         if ($data['phone']) {
             // 海外会員に対応するため、保存形式（中国は国内表記／他は E.164）へ正規化して検証する
-            $normalized = normalize_phone($data['phone'], $data['dial_code'] ?? null);
+            $normalized = normalize_phone((string)$data['phone'], $data['dial_code'] ?: null);
             if (!$normalized) return app('json')->fail('手机号格式错误');
             $data['phone'] = $normalized;
         }
+        // dial_code はフォーム用の項目でユーザーテーブルには保存しない
+        unset($data['dial_code']);
         if ($this->services->count(['phone' => $data['phone'], 'is_del' => 0, 'not_uid' => $id])) {
             return app('json')->fail('手机号已经存在');
         }
