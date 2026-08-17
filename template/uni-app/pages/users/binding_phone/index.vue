@@ -22,9 +22,10 @@
 			</view>
 		</view>
 		<view class="page-form">
-			<view class="item">
+			<view class="item acea-row row-middle">
+				<dial-code-picker v-model="dialCode" />
 				<input type='number' :placeholder='$t(`填写手机号码`)' placeholder-class='placeholder' v-model="phone"
-					:maxlength="11"></input>
+					:maxlength="phoneMaxLength"></input>
 			</view>
 			<view class="item acea-row row-between-wrapper">
 				<input type='number' :placeholder='$t(`填写验证码`)' placeholder-class='placeholder' :maxlength="6"
@@ -86,12 +87,15 @@
 	import Routine from '@/libs/routine';
 	import Verify from '../components/verify/index.vue';
 	import Cache from '@/utils/cache';
+	import DialCodePicker from '@/components/dialCodePicker/index.vue';
+	import { checkPhone, formatPhone } from '@/utils/validate';
 	export default {
 		mixins: [sendVerifyCode, colors],
 		components: {
 			Verify,
 			editUserModal,
-			privacyAgreementPopup
+			privacyAgreementPopup,
+			DialCodePicker
 		},
 		data() {
 			return {
@@ -108,6 +112,14 @@
 				pageTitle: '绑定手机号',
 				configData: Cache.get('BASIC_CONFIG'),
 				canGetPrivacySetting: false,
+				// 海外会員向け: 選択中の国番号（+ は含まない）
+				dialCode: '',
+			}
+		},
+		computed: {
+			// 中国番号は従来どおり11桁固定、海外番号は桁数が国ごとに異なるため緩める
+			phoneMaxLength() {
+				return String(this.dialCode || '86') === '86' ? 11 : 15;
 			}
 		},
 		onLoad(options) {
@@ -167,7 +179,7 @@
 					});
 					return false
 				}
-				if (!(/^1(3|4|5|7|8|9|6)\d{9}$/i.test(that.phone))) {
+				if (!checkPhone(that.phone, that.dialCode)) {
 					that.$util.Tips({
 						title: that.$t(`请输入正确的手机号码`)
 					});
@@ -193,7 +205,8 @@
 								code,
 								spread_spid: app.globalData.spid,
 								spread_code: app.globalData.code,
-								phone: this.phone,
+								phone: formatPhone(this.phone, this.dialCode),
+								dial_code: this.dialCode,
 								captcha: this.captcha,
 							}).then(res => {
 								uni.hideLoading();
@@ -229,7 +242,8 @@
 				met = wechatBindingPhone
 				// #endif
 				met({
-					phone: this.phone,
+					phone: formatPhone(this.phone, this.dialCode),
+					dial_code: this.dialCode,
 					captcha: this.captcha,
 					key
 				}).then(res => {
@@ -285,7 +299,7 @@
 				this.$refs.verify.hide()
 				let that = this;
 				verifyCode().then(res => {
-					registerVerify(that.phone, 'reset', res.data.key, this.captchaType, data.captchaVerification)
+					registerVerify(formatPhone(that.phone, that.dialCode), 'reset', res.data.key, this.captchaType, data.captchaVerification, that.dialCode)
 						.then(res => {
 							that.$util.Tips({
 								title: res.msg
@@ -307,7 +321,7 @@
 				if (!that.phone) return that.$util.Tips({
 					title: that.$t(`请填写手机号码`)
 				});
-				if (!(/^1(3|4|5|7|8|9|6)\d{9}$/i.test(that.phone))) return that.$util.Tips({
+				if (!checkPhone(that.phone, that.dialCode)) return that.$util.Tips({
 					title: that.$t(`请输入正确的手机号码`)
 				});
 				this.$refs.verify.show();

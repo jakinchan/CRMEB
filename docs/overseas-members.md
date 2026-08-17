@@ -146,7 +146,9 @@ mysql -u<user> -p <database> < crmeb/public/install/phone_international.sql
 | `crmeb/config/phone.php` | 対応国・検証パターン・保存形式の設定 |
 | `crmeb/crmeb/utils/PhoneNumber.php` | 正規化 / 検証 / E.164変換 / 国番号分解 |
 | `crmeb/app/common.php` | `check_phone()` を国際対応に変更し、`normalize_phone()` を追加 |
-| `crmeb/app/api/controller/v1/LoginController.php` | `verify` / `register` / `reset` / `mobile` / `login` で `dial_code` を受け取り保存形式へ正規化 |
+| `crmeb/app/api/controller/v1/LoginController.php` | `verify` / `register` / `reset` / `mobile` / `login` / `binding_phone` / `user_binding_phone` / `update_binding_phone` で `dial_code` を受け取り保存形式へ正規化 |
+| `crmeb/app/api/controller/v2/wechat/AuthController.php` | ミニプログラム `phoneLogin` で `dial_code` を受け取り正規化 |
+| `crmeb/app/api/controller/v2/wechat/WechatController.php` | 公众号 `authBindingPhone` で `dial_code` を受け取り正規化 |
 | `crmeb/app/api/validate/user/*.php` | 固定正規表現を `checkPhone` ルールへ差し替え |
 | `crmeb/app/services/message/notice/SmsService.php` | 海外番号を判定し国際テンプレート・署名へ切り替え |
 | `crmeb/app/api/controller/v1/PublicController.php` | 国番号一覧API `get_dial_code_list` |
@@ -163,17 +165,20 @@ mysql -u<user> -p <database> < crmeb/public/install/phone_international.sql
 | `api/public.js` | `getDialCodeList()` |
 | `pages/users/login/index.vue` | ログイン・登録画面にセレクタを追加 |
 | `pages/users/retrievePassword/index.vue` | パスワード再設定にセレクタを追加 |
+| `pages/users/auth/index.vue` | H5 の WeChat 認証後の電話番号紐付け画面にセレクタを追加 |
+| `pages/users/binding_phone/index.vue` | 電話番号紐付け・SMSログイン画面にセレクタを追加 |
+| `pages/users/user_phone/index.vue` | 電話番号変更画面にセレクタを追加 |
 
 端末側は**桁数の妥当性だけ**を見る緩い検証にしています。国ごとの詳細パターンを
 サーバーと端末で二重管理しないためで、厳密な検証はサーバーが行います。
 
 ## 既知の制限
 
-- **`pages/users/binding_phone/index.vue` は未対応です。**
-  WeChat / ミニプログラム利用者が電話番号を紐付ける導線で、WeChat前提のため
-  中国国内を想定しています。海外会員は通常のログイン画面（電話番号＋SMS）から登録します。
-  なおこのページには `registerVerify()` をオブジェクトではなく位置引数で呼んでいる
-  既存の不具合があります（今回の対応範囲外）。
+- **`pages/users/components/login_mobile/index.vue`（WeChat静默認証モーダル）は未対応です。**
+  呼び出し先の `v2/phone_wx_silence_auth` / `v2/phone_silence_auth` が
+  `app/api/route/v2.php` に定義されておらず、この対応以前から到達不能でした
+  （今回の対応範囲外。ルート自体を復活させるか、コンポーネントを削除するかの
+  判断が別途必要です）。
 - **管理画面の電話番号入力は未変更です。** 会員の電話番号編集はサーバー側
   （`adminapi` の `User.php`）で正規化されるため動作しますが、管理画面に残る
   中国番号向けの正規表現は、CRMEB自社SMSサービスの申込フォームや店舗設定など
@@ -182,6 +187,61 @@ mysql -u<user> -p <database> < crmeb/public/install/phone_international.sql
   SMS認証が前提のため、固定電話で登録しようとすると認証コードが届かず登録は完了しません
   （形式チェックでは弾かれず、SMS送信の段で失敗します）。
   形式の段階で弾きたい場合は `config/phone.php` の `strict` を `true` にしてください。
+
+## 重大な既知バグ（修正済み）: PHP7.4 環境での致命的エラー
+
+`crmeb/crmeb/utils/PhoneNumber.php` が `str_starts_with()` を使用していましたが、
+これは **PHP8.0 以降にしか存在しない関数**です。本番のDockerイメージは
+`ccr.ccs.tencentyun.com/crmebky_php/php:v7.4`（PHP7.4.33）のため、
+電話番号を1件でも含むリクエスト（`normalize_phone()` を経由する
+`login` / `register` / `register/verify` / `binding` / `user/binding` /
+`user/updatePhone` / ミニプログラムの `phone_login` / `auth_binding_phone` など）は
+**中国番号を含めて全て HTTP 500 で失敗していました**。
+
+原因は `Fatal error: Uncaught Error: Call to undefined function
+crmeb\utils\str_starts_with()`（`docker exec crmeb_php php -r` で直接
+`normalize_phone()` を呼んで再現・特定）。`self::startsWith()` という
+`strpos($haystack, $needle) === 0` ベースの代替メソッドを追加し、
+7箇所の `str_starts_with()` 呼び出しを置き換えて修正しました。
+
+**この修正が入るまでは、電話番号によるログイン・登録機能自体が
+（国を問わず）本番相当の PHP7.4 環境では動作していなかった**ことになります。
+PHP8 環境（ローカル開発など）では再現しないため、見逃されやすい種類のバグです。
+
+## H5サイトのビルドと配信の仕組み
+
+`template/uni-app` はビルド用の `npm run build:h5` 等が存在せず
+（`package.json` は空、`node_modules` 無し）、**HBuilderX（DCloud純正のGUI IDE）
+でのビルドが前提**です。CLIやCI上でのビルドは現状できません。
+
+配信先は別サーバーではなく、**ビルド済み成果物がそのまま
+`crmeb/public/` にコミットされていて、CRMEB本体のnginxがそのまま静的配信**
+しています（`help/docker/nginx/vhost.conf` の `root /var/www/public;`）。
+
+| ビルド成果物 | 配置先 |
+| --- | --- |
+| `index.html` | `crmeb/public/index.html` |
+| `static/js/*.js`, `static/index.*.css` | `crmeb/public/static/` |
+| ページ別の静的アセット | `crmeb/public/pages/*/static/` |
+
+### 更新手順
+
+1. HBuilderXで「ファイル → インポート → 既存プロジェクト」から `template/uni-app` を開く
+2. 「発行 → 网站-PC Web或手机版」でH5ビルドを実行
+   （出力先: `template/uni-app/unpackage/dist/build/h5/`）
+3. 出力された `index.html` / `static/` / `pages/*/static/` を
+   `crmeb/public/` 配下の同名ファイル・ディレクトリに上書きコピーする
+4. Dockerのbind mountにより追加のデプロイ操作は不要（`crmeb/` を編集すれば
+   即座にnginxから配信される）。JS/CSSはハッシュ付きファイル名のため
+   ブラウザキャッシュも自動的に切り替わる
+5. 確認: 新しいバンドルに `dial_code` 文字列が含まれるか、
+   ログイン画面に国番号セレクタが表示されるかを確認する
+
+現在 `crmeb/public/` に入っているビルドは 2026-08-07 時点のもので、
+本ドキュメントの国際電話番号対応（`a73d403f`、2026-08-08）より前のビルドです。
+**したがって現在配信されているH5サイトには、このドキュメントで説明している
+国番号セレクタ等の変更が反映されていません。** 上記手順での再ビルド・
+再配置が別途必要です。
 
 ---
 

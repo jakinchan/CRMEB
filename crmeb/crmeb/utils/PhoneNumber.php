@@ -27,6 +27,17 @@ use think\facade\Config;
 class PhoneNumber
 {
     /**
+     * str_starts_with() は PHP8.0+ 専用。本番は PHP7.4 で動くため代替する。
+     * @param string $haystack
+     * @param string $needle
+     * @return bool
+     */
+    protected static function startsWith(string $haystack, string $needle): bool
+    {
+        return $needle === '' || strpos($haystack, $needle) === 0;
+    }
+
+    /**
      * 対応国の一覧を返す
      * @return array
      */
@@ -117,7 +128,7 @@ class PhoneNumber
     protected static function clean(string $phone): string
     {
         $phone = trim($phone);
-        $plus = str_starts_with($phone, '+');
+        $plus = self::startsWith($phone, '+');
         $digits = preg_replace('/\D/', '', $phone);
         return $plus ? '+' . $digits : (string)$digits;
     }
@@ -131,7 +142,7 @@ class PhoneNumber
     protected static function stripTrunkPrefix(string $national, array $country): string
     {
         $prefix = (string)($country['trunk_prefix'] ?? '');
-        if ($prefix === '' || !str_starts_with($national, $prefix)) {
+        if ($prefix === '' || !self::startsWith($national, $prefix)) {
             return $national;
         }
         $stripped = substr($national, strlen($prefix));
@@ -165,11 +176,11 @@ class PhoneNumber
         }
 
         // 入力が既に +国番号 で始まっている場合は、そこから国を判定する
-        if (str_starts_with($phone, '+')) {
+        if (self::startsWith($phone, '+')) {
             $digits = substr($phone, 1);
             foreach (self::sortedByDialCodeLength() as $country) {
                 $dc = (string)$country['dial_code'];
-                if (str_starts_with($digits, $dc)) {
+                if (self::startsWith($digits, $dc)) {
                     $national = substr($digits, strlen($dc));
                     $built = self::build($country, $national);
                     if ($built !== null) {
@@ -285,7 +296,7 @@ class PhoneNumber
     public static function toE164(string $phone): string
     {
         $phone = self::clean($phone);
-        if (str_starts_with($phone, '+')) {
+        if (self::startsWith($phone, '+')) {
             return $phone;
         }
         return '+' . self::nationalFormatDialCode() . $phone;
@@ -299,13 +310,13 @@ class PhoneNumber
     public static function split(string $phone): array
     {
         $phone = self::clean($phone);
-        if (!str_starts_with($phone, '+')) {
+        if (!self::startsWith($phone, '+')) {
             return ['dial_code' => self::nationalFormatDialCode(), 'national' => $phone];
         }
         $digits = substr($phone, 1);
         foreach (self::sortedByDialCodeLength() as $country) {
             $dc = (string)$country['dial_code'];
-            if (str_starts_with($digits, $dc)) {
+            if (self::startsWith($digits, $dc)) {
                 return ['dial_code' => $dc, 'national' => substr($digits, strlen($dc))];
             }
         }

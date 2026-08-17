@@ -3,9 +3,10 @@
 		<form @submit="editPwd">
 			<view class="ChangePassword">
 				<view class="list">
-					<view class="item">
+					<view class="item acea-row row-middle">
+						<dial-code-picker v-model="dialCode" />
 						<input type='number' :placeholder='$t(`填写手机号码`)' placeholder-class='placeholder'
-							v-model="phone"></input>
+							v-model="phone" :maxlength="phoneMaxLength"></input>
 					</view>
 					<view class="item acea-row row-between-wrapper">
 						<input type='number' :placeholder='$t(`填写验证码`)' placeholder-class='placeholder' class="codeIput"
@@ -45,13 +46,16 @@
 	import authorize from '@/components/Authorize';
 	// #endif
 	import colors from '@/mixins/color.js';
+	import DialCodePicker from '@/components/dialCodePicker/index.vue';
+	import { checkPhone, formatPhone } from '@/utils/validate';
 	export default {
 		mixins: [sendVerifyCode, colors],
 		components: {
 			// #ifdef MP
 			authorize,
 			// #endif
-			Verify
+			Verify,
+			DialCodePicker
 		},
 		data() {
 			return {
@@ -61,10 +65,18 @@
 				isShowAuth: false, //是否隐藏授权
 				key: '',
 				authKey: '',
-				type: 0
+				type: 0,
+				// 海外会員向け: 選択中の国番号（+ は含まない）
+				dialCode: '',
 			};
 		},
-		computed: mapGetters(['isLogin']),
+		computed: {
+			...mapGetters(['isLogin']),
+			// 中国番号は従来どおり11桁固定、海外番号は桁数が国ごとに異なるため緩める
+			phoneMaxLength() {
+				return String(this.dialCode || '86') === '86' ? 11 : 15;
+			}
+		},
 		onLoad(options) {
 			if (this.isLogin) {
 				verifyCode().then(res => {
@@ -88,7 +100,7 @@
 				if (!that.phone) return that.$util.Tips({
 					title: that.$t(`请填写手机号码`)
 				});
-				if (!(/^1(3|4|5|7|8|9|6)\d{9}$/i.test(that.phone))) return that.$util.Tips({
+				if (!checkPhone(that.phone, that.dialCode)) return that.$util.Tips({
 					title: that.$t(`请输入正确的手机号码`)
 				});
 				if (!that.captcha) return that.$util.Tips({
@@ -96,7 +108,8 @@
 				});
 				if (this.type == 0) {
 					bindingUserPhone({
-						phone: that.phone,
+						phone: formatPhone(that.phone, that.dialCode),
+						dial_code: that.dialCode,
 						captcha: that.captcha
 					}).then(res => {
 						if (res.data !== undefined && res.data.is_bind) {
@@ -107,7 +120,8 @@
 								success(res) {
 									if (res.confirm) {
 										bindingUserPhone({
-											phone: that.phone,
+											phone: formatPhone(that.phone, that.dialCode),
+											dial_code: that.dialCode,
 											captcha: that.captcha,
 											step: 1
 										}).then(res => {
@@ -148,7 +162,8 @@
 					})
 				} else {
 					updatePhone({
-						phone: that.phone,
+						phone: formatPhone(that.phone, that.dialCode),
+						dial_code: that.dialCode,
 						captcha: that.captcha,
 					}).then(res => {
 						return that.$util.Tips({
@@ -169,7 +184,7 @@
 				this.$refs.verify.hide()
 				let that = this;
 				verifyCode().then(res => {
-					registerVerify(that.phone, 'reset', res.data.key, this.captchaType, data.captchaVerification)
+					registerVerify(formatPhone(that.phone, that.dialCode), 'reset', res.data.key, this.captchaType, data.captchaVerification, that.dialCode)
 						.then(res => {
 							that.$util.Tips({
 								title: res.msg
@@ -192,7 +207,7 @@
 				if (!that.phone) return that.$util.Tips({
 					title: that.$t(`请填写手机号码`)
 				});
-				if (!(/^1(3|4|5|7|8|9|6)\d{9}$/i.test(that.phone))) return that.$util.Tips({
+				if (!checkPhone(that.phone, that.dialCode)) return that.$util.Tips({
 					title: that.$t(`请输入正确的手机号码`)
 				});
 				this.$refs.verify.show();

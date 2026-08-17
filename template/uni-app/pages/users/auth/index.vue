@@ -4,7 +4,8 @@
 		<form @submit="editPwd" report-submit='true'>
 			<view class="ChangePassword">
 				<view class="list">
-					<view class="item">
+					<view class="item acea-row row-middle">
+						<dial-code-picker v-model="dialCode" />
 						<input type='number' :placeholder='$t(`请输入手机号`)' placeholder-class='placeholder'
 							v-model="phone"></input>
 					</view>
@@ -52,10 +53,13 @@
 		registerVerify
 	} from '@/api/user.js'
 	import Verify from '../components/verify/index.vue';
+	import DialCodePicker from '@/components/dialCodePicker/index.vue';
+	import { checkPhone, formatPhone } from '@/utils/validate';
 	export default {
 		name: "Auth",
 		components: {
-			Verify
+			Verify,
+			DialCodePicker
 		},
 		mixins: [sendVerifyCode],
 		data() {
@@ -66,6 +70,8 @@
 				authKey: '',
 				scope: '',
 				bindPhone: false,
+				// 海外会員向け: 選択中の国番号（+ は含まない）
+				dialCode: '',
 			};
 		},
 		mounted() {
@@ -124,7 +130,7 @@
 						title: that.$t(`请输入手机号`)
 					});
 				}
-				if (!(/^1(3|4|5|7|8|9|6)\d{9}$/i.test(that.phone))) {
+				if (!checkPhone(that.phone, that.dialCode)) {
 					return that.$util.Tips({
 						title: that.$t(`请输入正确的手机号码`)
 					});
@@ -135,7 +141,8 @@
 					});
 				}
 				bindingPhone({
-					phone: that.phone,
+					phone: formatPhone(that.phone, that.dialCode),
+					dial_code: that.dialCode,
 					captcha: that.captcha,
 					key: that.authKey
 				}).then(res => {
@@ -170,16 +177,18 @@
 				if (!that.phone) return that.$util.Tips({
 					title: that.$t(`请输入手机号`)
 				});
-				if (!(/^1(3|4|5|7|8|9|6)\d{9}$/i.test(that.phone))) return that.$util.Tips({
+				if (!checkPhone(that.phone, that.dialCode)) return that.$util.Tips({
 					title: that.$t(`请输入正确的手机号码`)
 				});
 				this.$refs.verify.show()
 			},
 			success(data) {
+				let that = this;
 				this.$refs.verify.hide()
 				verifyCode().then(res => {
 					registerVerify({
-						phone: that.phone,
+						phone: formatPhone(that.phone, that.dialCode),
+						dial_code: that.dialCode,
 						type: 'reset',
 						key: res.data.key,
 						captchaType: this.captchaType,

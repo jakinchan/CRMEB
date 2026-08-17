@@ -317,8 +317,8 @@ switch ($step) {
                     if (trim($sql) == '')
                         continue;
                     $sql = str_replace('`eb_', '`' . $dbPrefix, $sql);//替换表前缀
-                    $sql = str_replace('http://demo.crmeb.com', $request_scheme . '://' . $request_host, $sql);//替换图片域名
-                    $sql = str_replace('http:\\\\/\\\\/demo.crmeb.com', $request_scheme . ':\\\\/\\\\/' . $request_host, $sql);//替换图片域名
+                    $sql = str_replace('https://tenpin.goodworld.co.jp', $request_scheme . '://' . $request_host, $sql);//替换图片域名
+                    $sql = str_replace('http:\\\\/\\\\/tenpin.goodworld.co.jp', $request_scheme . ':\\\\/\\\\/' . $request_host, $sql);//替换图片域名
                     $ret = mysqli_query($conn, $sql);
                     $message = '';
                     $arr = array('n' => $i, 'count' => $counts, 'msg' => $message, 'time' => date('Y-m-d H:i:s'));

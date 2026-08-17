@@ -223,6 +223,7 @@ export function registerVerify(
   key,
   captchaType,
   captchaVerification,
+  dialCode,
 ) {
   return request.post(
     "register/verify",
@@ -232,6 +233,7 @@ export function registerVerify(
       key: key,
       captchaType: captchaType,
       captchaVerification: captchaVerification,
+      dial_code: dialCode,
     },
     {
       noAuth: true,

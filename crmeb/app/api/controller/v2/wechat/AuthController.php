@@ -109,8 +109,14 @@ class AuthController
      * @email: 442384644@qq.com
      * @date: 2023/8/12
      */
-    public function phoneLogin($key = '', $phone = '', $captcha = '', $spread_code = '', $spread_spid = '', $code = '')
+    public function phoneLogin($key = '', $phone = '', $captcha = '', $spread_code = '', $spread_spid = '', $code = '', $dial_code = '')
     {
+        // 検証コード送信時と同じ保存形式に揃える（送信時と国番号がずれるとキャッシュキーが一致しない）
+        $normalized = normalize_phone((string)$phone, $dial_code);
+        if (!$normalized) {
+            return app('json')->fail('手机号格式不正确');
+        }
+        $phone = $normalized;
         //验证验证码
         $verifyCode = CacheService::get('code_' . $phone);
         if (!$verifyCode)

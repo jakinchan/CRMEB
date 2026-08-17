@@ -22,13 +22,22 @@
 // | 会话设置
 // +----------------------------------------------------------------------
 
+use think\facade\Env;
+
 return [
     // session name
     'name'           => '',
     // SESSION_ID的提交变量,解决flash上传跨域
     'var_session_id' => '',
     // 驱动方式 支持file redis memcache memcached
-    'type'           => 'file',
+    // Windows のバインドマウント上にセッションファイルを置くと1ファイル60ms前後かかり
+    // リクエストが数秒遅くなる。.env の [SESSION] TYPE = redis で切り替えられるようにする。
+    'type'           => Env::get('session.type', 'file'),
+    // type = redis のときの接続先（DATABASE/REDIS と同じ値を使う）
+    'host'           => Env::get('redis.redis_hostname', '127.0.0.1'),
+    'port'           => (int)Env::get('redis.port', 6379),
+    'password'       => Env::get('redis.redis_password', ''),
+    'select'         => (int)Env::get('redis.select', 0),
     // 过期时间
     'expire'         => 10800,
     // 前缀

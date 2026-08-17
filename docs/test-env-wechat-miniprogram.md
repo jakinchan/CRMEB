@@ -269,7 +269,7 @@ cloudflared tunnel run crmeb-test
 
 ```js
 // #ifdef MP || APP-PLUS
-HTTP_REQUEST_URL: `https://demo.crmeb.com`,   // ← ここを変更
+HTTP_REQUEST_URL: `https://tianchibencao.goodworld.co.jp`,   // ← ここを変更
 // #endif
 ```
 

@@ -505,11 +505,18 @@ class LoginController
      */
     public function binding_phone(Request $request)
     {
-        list($phone, $captcha, $key) = $request->postMore([
+        list($phone, $captcha, $key, $dialCode) = $request->postMore([
             ['phone', ''],
             ['captcha', ''],
-            ['key', '']
+            ['key', ''],
+            ['dial_code', '']
         ], true);
+        // 検証コード送信時と同じ保存形式に揃える（送信時と紐付け時で国番号がずれるとキャッシュキーが一致しない）
+        $normalized = normalize_phone((string)$phone, $dialCode);
+        if (!$normalized) {
+            return app('json')->fail('手机号格式不正确');
+        }
+        $phone = $normalized;
         //验证手机号
         try {
             validate(RegisterValidates::class)->scene('code')->check(['phone' => $phone]);
@@ -548,11 +555,19 @@ class LoginController
      */
     public function user_binding_phone(Request $request)
     {
-        list($phone, $captcha, $step) = $request->postMore([
+        list($phone, $captcha, $step, $dialCode) = $request->postMore([
             ['phone', ''],
             ['captcha', ''],
-            ['step', 0]
+            ['step', 0],
+            ['dial_code', '']
         ], true);
+
+        // 検証コード送信時と同じ保存形式に揃える
+        $normalized = normalize_phone((string)$phone, $dialCode);
+        if (!$normalized) {
+            return app('json')->fail('手机号格式不正确');
+        }
+        $phone = $normalized;
 
         //验证手机号
         try {
@@ -580,10 +595,18 @@ class LoginController
 
     public function update_binding_phone(Request $request)
     {
-        [$phone, $captcha] = $request->postMore([
+        [$phone, $captcha, $dialCode] = $request->postMore([
             ['phone', ''],
             ['captcha', ''],
+            ['dial_code', ''],
         ], true);
+
+        // 検証コード送信時と同じ保存形式に揃える
+        $normalized = normalize_phone((string)$phone, $dialCode);
+        if (!$normalized) {
+            return app('json')->fail('手机号格式不正确');
+        }
+        $phone = $normalized;
 
         //验证手机号
         try {
