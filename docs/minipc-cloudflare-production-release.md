@@ -43,26 +43,17 @@ Cloudflare Tunnel（Windows サービス化・常駐）
 
 ## 2. デプロイスクリプト
 
+実装は [deploy.ps1](../deploy.ps1)（リポジトリルート）。
+
 ```powershell
-# deploy.ps1（自宅PC上、リポジトリのルートで実行）
-git pull origin master
-
-Push-Location template/admin
-npm ci
-npm run build
-Copy-Item -Recurse -Force dist\* ..\..\crmeb\public\admin\
-Pop-Location
-
-docker exec crmeb_php php think workerman restart
-docker exec crmeb_php php think queue:restart
-
-# 簡易スモークテスト（任意）
-curl.exe -f https://<本番ドメイン>/ | Out-Null
-curl.exe -f https://<本番ドメイン>/api/get_lang_type_list | Out-Null
-Write-Host "deploy done"
+.\deploy.ps1 -SiteUrl "https://shop.example.com"   # 通常のリリース（スモークテスト込み）
+.\deploy.ps1 -SkipAdminBuild                        # PHP側の変更のみ反映したいとき
+.\deploy.ps1                                        # SiteUrl未指定ならスモークテストは自動スキップ
 ```
 
 **リリース手順は「masterにmergeしたら、自宅PCでこのスクリプトを1回実行するだけ」。**
+`git pull`・`npm run build`・`docker exec`のいずれかが失敗した時点でスクリプトは停止し、
+以降の手順（admin配置やコンテナ再起動）は実行されません。
 
 **設計上のポイント**
 
@@ -119,9 +110,9 @@ Cloudflare Accessは、[test-env-wechat-miniprogram.md](test-env-wechat-miniprog
 
 ## 5. エラーハンドリング・ロールバック
 
-- ビルド失敗（`npm run build`失敗など）→ `deploy.ps1`がその時点で止まります。PowerShellは
-  デフォルトで非終端エラーでも後続行を実行し続けるため、各コマンド後に`if ($LASTEXITCODE -ne 0) { exit 1 }`
-  を入れ、途中失敗時に後続の`Copy-Item`やコンテナ再起動が実行されないようにします。
+- ビルド失敗（`npm run build`失敗など）→ `deploy.ps1`はコマンドごとに終了コードを確認しており
+  （`Invoke-Checked`関数）、失敗した時点でスクリプトが停止します。途中失敗時に後続の
+  `Copy-Item`やコンテナ再起動が実行されることはありません。
 - スモークテスト失敗（デプロイ後にAPIが200を返さない等）→ スクリプト実行者（自宅PCの前にいる本人）が
   その場で気づけます。自動通知やロールバックは行いません。`master`のコミット単位で状態が
   追えるため、必要な場合は手動で直前のコミットへ`git checkout`して`deploy.ps1`を再実行すれば
