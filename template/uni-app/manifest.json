@@ -218,7 +218,27 @@
     },
     "h5" : {
         "devServer" : {
-            "https" : false
+            "https" : false,
+            "proxy" : {
+                "/api" : {
+                    "target" : "http://127.0.0.1:8080",
+                    "changeOrigin" : true
+                },
+                "/uploads" : {
+                    "target" : "http://127.0.0.1:8080",
+                    "changeOrigin" : true
+                },
+                "/notice" : {
+                    "target" : "http://127.0.0.1:8080",
+                    "ws" : true,
+                    "changeOrigin" : true
+                },
+                "/msg" : {
+                    "target" : "http://127.0.0.1:8080",
+                    "ws" : true,
+                    "changeOrigin" : true
+                }
+            }
         },
         "router" : {
             "mode" : "history",
