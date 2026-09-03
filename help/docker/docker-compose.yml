@@ -55,6 +55,7 @@ services:
     volumes:
       - ../../crmeb:/var/www
       - ../../crmeb/runtime:/var/www/runtime
+      - ./php/opcache.ini:/usr/local/etc/php/conf.d/zzz-opcache.ini
     networks:
       app_net:
         ipv4_address: 172.32.10.90
