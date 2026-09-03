@@ -19,7 +19,16 @@
         ></el-input>
       </el-form-item>
       <el-form-item label="手机号码：" prop="phone">
-        <el-input class="form-sty" v-model="formItem.phone" placeholder="请输入手机号码" style="width: 80%"></el-input>
+        <el-input class="form-sty" v-model="formItem.phone" placeholder="请输入手机号码" style="width: 80%">
+          <el-select v-model="formItem.dial_code" slot="prepend" style="width: 110px">
+            <el-option
+              v-for="item in countryList"
+              :key="item.dial_code"
+              :value="item.dial_code"
+              :label="'+' + item.dial_code + ' ' + item.name"
+            ></el-option>
+          </el-select>
+        </el-input>
       </el-form-item>
       <el-form-item label="生日：">
         <el-date-picker
@@ -178,10 +187,29 @@ export default {
     return {
       modals: false,
       labelShow: false,
+      countryList: [
+        { dial_code: '86', name: '中国' },
+        { dial_code: '81', name: '日本' },
+        { dial_code: '82', name: '韩国' },
+        { dial_code: '886', name: '台湾' },
+        { dial_code: '852', name: '香港' },
+        { dial_code: '65', name: '新加坡' },
+        { dial_code: '1', name: '美国/加拿大' },
+        { dial_code: '44', name: '英国' },
+        { dial_code: '49', name: '德国' },
+        { dial_code: '33', name: '法国' },
+        { dial_code: '39', name: '意大利' },
+        { dial_code: '34', name: '西班牙' },
+        { dial_code: '31', name: '荷兰' },
+        { dial_code: '41', name: '瑞士' },
+        { dial_code: '46', name: '瑞典' },
+        { dial_code: '61', name: '澳大利亚' },
+      ],
       formItem: {
         uid: 0,
         real_name: '',
         phone: '',
+        dial_code: '86',
         birthday: '',
         card_id: '',
         addres: '',
@@ -221,6 +249,7 @@ export default {
       arr.map((i) => {
         this.formItem[i] = this.userData.userInfo[i];
       });
+      this.splitPhone(this.userData.userInfo.phone);
       if (!this.formItem.birthday) this.formItem.birthday = '';
       if (this.formItem.label_id.length) {
         this.dataLabel = this.formItem.label_id;
@@ -250,6 +279,26 @@ export default {
       this.labelShow = false;
       this.dataLabel = dataLabel;
     },
+    // 保存形式の電話番号を dial_code / phone（国内表記）へ分解して表示用にセットする
+    // 中国番号（86）は従来通り "+" なしの国内表記で保存されているためそのまま表示する
+    splitPhone(phone) {
+      phone = phone || '';
+      if (phone.charAt(0) !== '+') {
+        this.formItem.dial_code = '86';
+        this.formItem.phone = phone;
+        return;
+      }
+      const digits = phone.slice(1);
+      const sorted = [...this.countryList].sort((a, b) => String(b.dial_code).length - String(a.dial_code).length);
+      const matched = sorted.find((c) => digits.indexOf(String(c.dial_code)) === 0);
+      if (matched) {
+        this.formItem.dial_code = matched.dial_code;
+        this.formItem.phone = digits.slice(String(matched.dial_code).length);
+      } else {
+        this.formItem.dial_code = '86';
+        this.formItem.phone = phone;
+      }
+    },
     // 标签弹窗关闭
     labelClose() {
       this.labelShow = false;
@@ -263,6 +312,7 @@ export default {
         uid: '',
         real_name: '',
         phone: '',
+        dial_code: '86',
         birthday: '',
         card_id: '',
         addres: '',
