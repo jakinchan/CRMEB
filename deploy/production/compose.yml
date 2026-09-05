@@ -1,0 +1,118 @@
+name: ${COMPOSE_PROJECT_NAME:-crmeb-production}
+x-common: &common
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: '3'}
+x-app: &app
+  <<: *common
+  image: crmeb-app:${APP_TAG:-local}
+  build: {context: ../.., dockerfile: deploy/production/Dockerfile, target: app}
+  init: true
+  user: www-data
+  environment: &env
+    PHP_APP_DEBUG: 'false'
+    PHP_APP_DEFAULT_TIMEZONE: Asia/Shanghai
+    PHP_DATABASE_TYPE: mysql
+    PHP_DATABASE_HOSTNAME: mysql
+    PHP_DATABASE_HOSTPORT: '3306'
+    PHP_DATABASE_DATABASE: ${DB_NAME:-crmeb}
+    PHP_DATABASE_USERNAME: crmeb
+    PHP_DATABASE_PREFIX: ${DB_PREFIX:-eb_}
+    PHP_DATABASE_CHARSET: utf8mb4
+    PHP_DATABASE_DEBUG: 'false'
+    PHP_CACHE_DRIVER: redis
+    PHP_SESSION_TYPE: redis
+    PHP_REDIS_REDIS_HOSTNAME: redis
+    PHP_REDIS_PORT: '6379'
+    PHP_REDIS_SELECT: '0'
+    PHP_WORKERMAN_CHANNEL_IP: workerman
+  secrets: [db_password, redis_password, app_key]
+  volumes:
+    - uploads:/var/www/public/uploads
+    - statics:/var/www/public/statics
+    - backups:/var/www/backup
+  tmpfs:
+    - /var/www/runtime:uid=33,gid=33,mode=0750
+  depends_on:
+    mysql: {condition: service_healthy}
+    redis: {condition: service_healthy}
+  stop_grace_period: 2m
+services:
+  mysql:
+    <<: *common
+    image: ${MYSQL_IMAGE:-mysql:8.0}
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-crmeb}
+      MYSQL_USER: crmeb
+      MYSQL_PASSWORD_FILE: /run/secrets/db_password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+    secrets: [db_password, db_root_password]
+    volumes: [mysql-data:/var/lib/mysql]
+    healthcheck:
+      test: [CMD-SHELL, 'MYSQL_PWD="$$(cat /run/secrets/db_password)" mysql -h127.0.0.1 -ucrmeb -e "SELECT 1" >/dev/null']
+      interval: 10s
+      timeout: 5s
+      retries: 30
+  redis:
+    <<: *common
+    image: ${REDIS_IMAGE:-redis:7.2}
+    secrets: [redis_password]
+    command: [sh, -c, 'exec docker-entrypoint.sh redis-server --appendonly yes --requirepass "$$(cat /run/secrets/redis_password)"']
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  php:
+    <<: *app
+    user: root
+    healthcheck:
+      test: [CMD, php, -r, '$$s=@fsockopen("127.0.0.1",9000); exit($$s ? 0 : 1);']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  nginx:
+    <<: *common
+    image: crmeb-web:${APP_TAG:-local}
+    build: {context: ../.., dockerfile: deploy/production/Dockerfile, target: web}
+    ports: ['127.0.0.1:${HTTP_PORT:-8088}:80']
+    volumes:
+      - uploads:/var/www/public/uploads:ro
+      - statics:/var/www/public/statics:ro
+    depends_on:
+      php: {condition: service_healthy}
+    healthcheck:
+      test: [CMD-SHELL, 'curl -fsS http://127.0.0.1/healthz >/dev/null']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  queue:
+    <<: *app
+    profiles: [jobs]
+    command: [php, think, 'queue:listen']
+  timer:
+    <<: *app
+    profiles: [jobs]
+    command: [php, think, timer, start]
+    stop_signal: SIGINT
+  workerman:
+    <<: *app
+    profiles: [jobs]
+    environment:
+      <<: *env
+      PHP_WORKERMAN_CHANNEL_IP: 0.0.0.0
+    command: [php, think, workerman, start]
+    stop_signal: SIGINT
+secrets:
+  db_password: {file: ./secrets/db_password}
+  db_root_password: {file: ./secrets/db_root_password}
+  redis_password: {file: ./secrets/redis_password}
+  app_key: {file: ./secrets/app_key}
+volumes:
+  mysql-data:
+  redis-data:
+  uploads:
+  statics:
+  backups:

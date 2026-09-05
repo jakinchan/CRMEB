@@ -15,7 +15,7 @@ return [
         //内部通讯监听端口
         'port' => 40003,
         //内部通讯地址
-        'ip' => '127.0.0.1',
+        'ip' => \think\facade\Env::get('workerman.channel_ip', '127.0.0.1'),
     ],
 
     // notice 新订单和新退款单发送消息给程序，后台的消息通知

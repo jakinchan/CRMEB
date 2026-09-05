@@ -25,7 +25,6 @@ crmeb/
 ├── build.example.php    # 构建示例脚本
 ├── composer.json        # Composer 依赖配置
 ├── composer.lock        # Composer 锁定版本
-├── filetree.txt         # 文件树结构快照
 ├── index.html           # 默认首页（防访问目录）
 ├── my.cnf               # MySQL 自定义配置（需忽略版本控制）
 ├── nginx.conf           # Nginx 配置（需忽略版本控制）

@@ -1,0 +1,88 @@
+name: crmeb-minipc
+x-php: &php
+  image: crmeb-minipc-php:7.4.33
+  build: .
+  working_dir: /var/www
+  restart: unless-stopped
+  volumes:
+    - ./source/crmeb:/var/www
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: '3'
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: crmeb
+      MYSQL_USER: crmeb
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Set DB_ROOT_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: [CMD-SHELL, 'MYSQL_PWD="$$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u crmeb -D crmeb -e "SELECT 1" >/dev/null']
+      interval: 10s
+      timeout: 5s
+      retries: 30
+  redis:
+    image: redis:7.2
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+    command: [sh, -c, 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  php:
+    <<: *php
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  nginx:
+    image: nginx:1.28
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8080:80'
+    volumes:
+      - ./source/crmeb/public:/var/www/public:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./install-block.conf:/etc/nginx/install-block.conf:ro
+    depends_on:
+      - php
+  queue:
+    <<: *php
+    user: www-data
+    profiles: [jobs]
+    command: [php, think, 'queue:listen']
+    stop_grace_period: 5m
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  workerman:
+    <<: *php
+    user: www-data
+    profiles: [jobs]
+    command: [php, think, workerman, start]
+    depends_on:
+      - php
+  timer:
+    <<: *php
+    user: www-data
+    profiles: [jobs]
+    command: [php, think, timer, start]
+    depends_on:
+      - php
+volumes:
+  mysql-data:
+  redis-data:
